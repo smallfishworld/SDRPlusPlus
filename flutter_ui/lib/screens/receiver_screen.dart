@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../services/audio_output.dart';
 import '../services/rtl_tcp_client.dart';
 
 class ReceiverScreen extends StatefulWidget {
@@ -15,12 +16,14 @@ class ReceiverScreen extends StatefulWidget {
 
 class _ReceiverScreenState extends State<ReceiverScreen> {
   final RtlTcpClient _client = RtlTcpClient();
+  final AudioOutput _audio = AudioOutput();
   final TextEditingController _hostController =
       TextEditingController(text: '192.168.2.110');
   final TextEditingController _portController =
       TextEditingController(text: '1234');
 
   StreamSubscription<Float32List>? _spectrumSubscription;
+  StreamSubscription<Uint8List>? _audioSubscription;
   StreamSubscription<RtlTcpConnectionState>? _stateSubscription;
   Timer? _scannerTimer;
 
@@ -30,6 +33,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   String _mode = 'AM';
   double _bandwidthKhz = 10;
   bool _tunerAgc = true;
+  double _volume = 0.72;
   bool _scanning = false;
   int _scanFrequencyHz = 118000000;
   RtlTcpConnectionState _connectionState =
@@ -73,6 +77,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         }
       });
     });
+    _audioSubscription = _client.audioStream.listen(_audio.addPcm);
     _stateSubscription = _client.stateStream.listen((state) {
       if (!mounted) {
         return;
@@ -88,8 +93,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   void dispose() {
     _scannerTimer?.cancel();
     unawaited(_spectrumSubscription?.cancel());
+    unawaited(_audioSubscription?.cancel());
     unawaited(_stateSubscription?.cancel());
     unawaited(_client.dispose());
+    unawaited(_audio.dispose());
     _hostController.dispose();
     _portController.dispose();
     super.dispose();
@@ -459,9 +466,12 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                 _metric(
                   'BW',
                   _bandwidthKhz.toStringAsFixed(0) + ' kHz',
-                  () => setState(() {
-                    _bandwidthKhz = _bandwidthKhz == 10 ? 12 : 10;
-                  }),
+                  () {
+                    setState(() {
+                      _bandwidthKhz = _bandwidthKhz == 10 ? 12 : 10;
+                    });
+                    _client.setBandwidth(_bandwidthKhz * 1000);
+                  },
                 ),
                 _metric('SQL', 'Off', () {}),
                 _metric('GAIN', _tunerAgc ? 'Auto' : 'Manual', () {
@@ -470,7 +480,19 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                     _client.setTunerAgc(_tunerAgc);
                   });
                 }),
-                _metric('VOL', '72%', () {}),
+                _metric(
+                  'VOL',
+                  (_volume * 100).round().toString() + '%',
+                  () {
+                    setState(() {
+                      _volume += 0.1;
+                      if (_volume > 1.01) {
+                        _volume = 0.2;
+                      }
+                    });
+                    _audio.setVolume(_volume);
+                  },
+                ),
               ],
             ),
           ],
@@ -482,14 +504,18 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   Widget _modeButton(String mode) {
     final selected = _mode == mode;
     return InkWell(
-      onTap: () => setState(() {
-        _mode = mode;
-        _bandwidthKhz = switch (mode) {
-          'WFM' => 150,
-          'NFM' => 12.5,
-          _ => 10,
-        };
-      }),
+      onTap: () {
+        setState(() {
+          _mode = mode;
+          _bandwidthKhz = switch (mode) {
+            'WFM' => 150,
+            'NFM' => 12.5,
+            _ => 10,
+          };
+        });
+        _client.setMode(mode);
+        _client.setBandwidth(_bandwidthKhz * 1000);
+      },
       borderRadius: BorderRadius.circular(13),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
@@ -842,7 +868,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                     leading: Icon(Icons.memory_rounded),
                     title: Text('Native SDR engine'),
                     subtitle: Text(
-                      'C ABI reserved for native DSP/audio. Current preview already uses live RTL-TCP for tuning and spectrum.',
+                      'Live AM/NFM/WFM audio currently runs in an isolated Dart DSP worker with SoLoud output. The stable C ABI remains the path for the optimized native engine.',
                     ),
                   ),
                 ),
@@ -862,11 +888,15 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     });
 
     try {
+      await _audio.start();
+      _audio.setVolume(_volume);
       await _client.connect(
         host: _hostController.text.trim(),
         port: port,
         sampleRateHz: _sampleRateHz,
         frequencyHz: _frequencyHz,
+        mode: _mode,
+        bandwidthHz: _bandwidthKhz * 1000,
       );
       _client.setTunerAgc(_tunerAgc);
       if (mounted) {
@@ -882,6 +912,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   Future<void> _disconnect() async {
     _stopScanner();
     await _client.disconnect();
+    await _audio.stopStream();
   }
 
   void _tuneFrequency(int frequencyHz) {
@@ -907,6 +938,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       _mode = preset.mode;
       _bandwidthKhz = preset.bandwidthHz / 1000;
     });
+    _client.setMode(_mode);
+    _client.setBandwidth(preset.bandwidthHz);
     _tuneFrequency(preset.frequencyHz);
   }
 
@@ -1035,6 +1068,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       _mode = 'AM';
       _bandwidthKhz = 10;
     });
+    _client.setMode('AM');
+    _client.setBandwidth(10000);
     _tuneFrequency(_scanFrequencyHz);
 
     _scannerTimer = Timer.periodic(const Duration(milliseconds: 650), (_) {
