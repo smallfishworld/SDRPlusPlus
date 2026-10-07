@@ -169,7 +169,7 @@ class RtlTcpClient {
 
   void setDirectSampling(int mode) {
     if (_state == RtlTcpConnectionState.connected) {
-      _sendCommand(9, mode.clamp(0, 2));
+      _sendCommand(9, mode.clamp(0, 2).toInt());
     }
   }
 
