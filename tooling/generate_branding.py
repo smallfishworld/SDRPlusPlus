@@ -118,3 +118,44 @@ colors_path.write_text("""<?xml version="1.0" encoding="utf-8"?>
     <color name="sdrpp_splash_background">#080B10</color>
 </resources>
 """)
+
+
+# Windows icon, when a Windows runner has already been generated.
+windows_icon = ROOT / "flutter_ui" / "windows" / "runner" / "resources" / "app_icon.ico"
+if windows_icon.parent.exists():
+    img.save(
+        windows_icon,
+        format="ICO",
+        sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
+    )
+
+# macOS AppIcon asset set.
+mac_icon_dir = ROOT / "flutter_ui" / "macos" / "Runner" / "Assets.xcassets" / "AppIcon.appiconset"
+if mac_icon_dir.exists():
+    for px in (16, 32, 64, 128, 256, 512, 1024):
+        img.resize((px, px), Image.Resampling.LANCZOS).save(
+            mac_icon_dir / f"app_icon_{px}.png"
+        )
+
+# iOS AppIcon asset set. Flutter's default Contents.json references these names.
+ios_icon_dir = ROOT / "flutter_ui" / "ios" / "Runner" / "Assets.xcassets" / "AppIcon.appiconset"
+if ios_icon_dir.exists():
+    ios_icons = {
+        "Icon-App-20x20@1x.png": 20,
+        "Icon-App-20x20@2x.png": 40,
+        "Icon-App-20x20@3x.png": 60,
+        "Icon-App-29x29@1x.png": 29,
+        "Icon-App-29x29@2x.png": 58,
+        "Icon-App-29x29@3x.png": 87,
+        "Icon-App-40x40@1x.png": 40,
+        "Icon-App-40x40@2x.png": 80,
+        "Icon-App-40x40@3x.png": 120,
+        "Icon-App-60x60@2x.png": 120,
+        "Icon-App-60x60@3x.png": 180,
+        "Icon-App-76x76@1x.png": 76,
+        "Icon-App-76x76@2x.png": 152,
+        "Icon-App-83.5x83.5@2x.png": 167,
+        "Icon-App-1024x1024@1x.png": 1024,
+    }
+    for name, px in ios_icons.items():
+        img.resize((px, px), Image.Resampling.LANCZOS).save(ios_icon_dir / name)
