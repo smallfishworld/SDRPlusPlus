@@ -28,6 +28,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   Timer? _scannerTimer;
 
   int _tab = 0;
+  String _presetCategory = 'All';
   int _frequencyHz = 127250000;
   int _sampleRateHz = 1024000;
   String _mode = 'AM';
@@ -636,18 +637,48 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   }
 
   Widget _presetsPage() {
+    final filtered = _presetCategory == 'All'
+        ? _presets
+        : _presets
+            .where((preset) => preset.category == _presetCategory)
+            .toList(growable: false);
+    const categories = <String>[
+      'All',
+      'Airband',
+      'Hangzhou FM',
+      'Amateur Radio',
+    ];
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
         children: <Widget>[
           _appHeader('Presets'),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: <Widget>[
+                for (final category in categories)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      selected: _presetCategory == category,
+                      label: Text(category),
+                      onSelected: (_) =>
+                          setState(() => _presetCategory = category),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
           Expanded(
             child: ListView.separated(
-              itemCount: _presets.length,
+              itemCount: filtered.length,
               separatorBuilder: (_, __) => const SizedBox(height: 9),
               itemBuilder: (context, index) {
-                final preset = _presets[index];
+                final preset = filtered[index];
                 final subtitle =
                     '${(preset.frequencyHz / 1000000).toStringAsFixed(3)} MHz  ·  ${preset.category}';
                 return Card(
