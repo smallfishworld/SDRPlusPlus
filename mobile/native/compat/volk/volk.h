@@ -168,6 +168,16 @@ static inline void volk_32fc_x2_multiply_32fc(
     }
 }
 
+static inline void volk_32fc_conjugate_32fc(
+    lv_32fc_t* out,
+    const lv_32fc_t* in,
+    unsigned int count) {
+    for (unsigned int n = 0; n < count; ++n) {
+        out[n].r = in[n].r;
+        out[n].i = -in[n].i;
+    }
+}
+
 static inline void volk_32f_x2_add_32f(
     float* out,
     const float* a,
