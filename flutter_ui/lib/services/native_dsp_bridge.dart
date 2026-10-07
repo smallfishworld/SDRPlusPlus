@@ -47,7 +47,6 @@ typedef _BackendNameDart = Pointer<Utf8> Function();
 
 class NativeDspBridge {
   NativeDspBridge._(
-    this._library,
     this._handle,
     this._destroy,
     this._setSampleRate,
@@ -65,7 +64,6 @@ class NativeDspBridge {
   static const int _maxIqBytes = 256 * 1024;
   static const int _maxPcmSamples = 128 * 1024;
 
-  final DynamicLibrary _library;
   final Pointer<Void> _handle;
   final _DestroyDart _destroy;
   final _SetSampleRateDart _setSampleRate;
@@ -124,7 +122,6 @@ class NativeDspBridge {
       }
 
       return NativeDspBridge._(
-        library,
         handle,
         destroy,
         setSampleRate,
@@ -235,7 +232,7 @@ class NativeDspBridge {
       if (sampleCount > 0) {
         final pcmBytes = _pcm
             .cast<Uint8>()
-            .asTypedList(sampleCount * Int16.size);
+            .asTypedList(sampleCount * sizeOf<Int16>());
         output.add(Uint8List.fromList(pcmBytes));
       }
 
