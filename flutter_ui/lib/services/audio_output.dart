@@ -31,7 +31,7 @@ class AudioOutput {
       // audible stop-start playback while keeping SDR latency reasonable.
       bufferingTimeNeeds: 0.35,
       sampleRate: 48000,
-      channels: Channels.mono,
+      channels: Channels.stereo,
       format: BufferType.s16le,
     );
     _source = source;
