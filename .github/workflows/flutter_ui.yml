@@ -1,4 +1,4 @@
-name: Flutter UI Check
+name: Flutter Cross-Platform Builds
 
 on:
   push:
@@ -10,24 +10,145 @@ on:
   workflow_dispatch:
 
 jobs:
-  flutter-ui:
+  analyze:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: flutter_ui
     steps:
       - uses: actions/checkout@v4
-
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-
       - name: Generate platform runners
-        run: flutter create --platforms=android,ios,windows,macos .
-
+        run: flutter create --org com.smallfishworld --project-name sdrpp_flutter --platforms=android,ios,windows,macos .
       - name: Get dependencies
         run: flutter pub get
+      - name: Analyze app sources
+        run: flutter analyze lib
 
-      - name: Analyze
-        run: flutter analyze
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter_ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate Android runner
+        run: flutter create --org com.smallfishworld --project-name sdrpp_flutter --platforms=android .
+      - name: Enable Android network access
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+          if "android.permission.INTERNET" not in s:
+              s = s.replace("<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">",
+                            "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">\n    <uses-permission android:name=\"android.permission.INTERNET\" />")
+          s = s.replace('android:label="sdrpp_flutter"', 'android:label="SDR++ Flutter"')
+          p.write_text(s)
+          PY
+      - name: Get dependencies
+        run: flutter pub get
+      - name: Build Android APK
+        run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdrpp-flutter-android
+          path: flutter_ui/build/app/outputs/flutter-apk/app-release.apk
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: flutter_ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate Windows runner
+        run: flutter create --org com.smallfishworld --project-name sdrpp_flutter --platforms=windows .
+      - name: Get dependencies
+        run: flutter pub get
+      - name: Build Windows
+        run: flutter build windows --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdrpp-flutter-windows
+          path: flutter_ui/build/windows/x64/runner/Release/
+
+  macos:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: flutter_ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate macOS runner
+        run: flutter create --org com.smallfishworld --project-name sdrpp_flutter --platforms=macos .
+      - name: Enable macOS network client entitlement
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ["macos/Runner/DebugProfile.entitlements", "macos/Runner/Release.entitlements"]:
+              p = Path(name)
+              s = p.read_text()
+              if "com.apple.security.network.client" not in s:
+                  s = s.replace("</dict>", "    <key>com.apple.security.network.client</key>\n    <true/>\n</dict>")
+              p.write_text(s)
+          PY
+      - name: Get dependencies
+        run: flutter pub get
+      - name: Build macOS
+        run: flutter build macos --release
+      - name: Archive macOS app
+        run: ditto -c -k --sequesterRsrc --keepParent "build/macos/Build/Products/Release/sdrpp_flutter.app" "build/sdrpp-flutter-macos.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdrpp-flutter-macos
+          path: flutter_ui/build/sdrpp-flutter-macos.zip
+
+  ios:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: flutter_ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate iOS runner
+        run: flutter create --org com.smallfishworld --project-name sdrpp_flutter --platforms=ios .
+      - name: Add local-network usage description
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("ios/Runner/Info.plist")
+          s = p.read_text()
+          if "NSLocalNetworkUsageDescription" not in s:
+              s = s.replace("</dict>", "    <key>NSLocalNetworkUsageDescription</key>\n    <string>Connect to RTL-TCP receivers on your local network.</string>\n</dict>")
+          p.write_text(s)
+          PY
+      - name: Get dependencies
+        run: flutter pub get
+      - name: Build iOS without signing
+        run: flutter build ios --release --no-codesign
+      - name: Archive iOS app
+        run: ditto -c -k --sequesterRsrc --keepParent "build/ios/iphoneos/Runner.app" "build/sdrpp-flutter-ios-unsigned.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdrpp-flutter-ios-unsigned
+          path: flutter_ui/build/sdrpp-flutter-ios-unsigned.zip
