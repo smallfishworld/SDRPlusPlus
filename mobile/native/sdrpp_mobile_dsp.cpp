@@ -12,6 +12,7 @@
 #include <dsp/taps/from_array.h>
 #include <dsp/demod/am.h>
 #include <dsp/demod/fm.h>
+#include <dsp/channel/frequency_xlator.h>
 #include <dsp/demod/broadcast_fm.h>
 #include <dsp/demod/ssb.h>
 #include <dsp/demod/cw.h>
