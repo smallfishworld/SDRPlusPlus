@@ -527,33 +527,27 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
               children: <Widget>[
                 _metric(
                   'BW',
-                  '${_bandwidthKhz.toStringAsFixed(0)} kHz',
-                  () {
-                    setState(() {
-                      _bandwidthKhz = _bandwidthKhz == 10 ? 12 : 10;
-                    });
-                    _client.setBandwidth(_bandwidthKhz * 1000);
-                  },
+                  _bandwidthKhz >= 100
+                      ? '${_bandwidthKhz.toStringAsFixed(0)} kHz'
+                      : '${_bandwidthKhz.toStringAsFixed(1)} kHz',
+                  _showBandwidthSheet,
                 ),
-                _metric('SQL', 'Off', () {}),
-                _metric('GAIN', _tunerAgc ? 'Auto' : 'Manual', () {
-                  setState(() {
-                    _tunerAgc = !_tunerAgc;
-                    _client.setTunerAgc(_tunerAgc);
-                  });
-                }),
+                _metric(
+                  'SQL',
+                  _squelchEnabled
+                      ? '${_squelchDb.toStringAsFixed(0)} dB'
+                      : 'Off',
+                  _showSquelchSheet,
+                ),
+                _metric(
+                  'GAIN',
+                  _tunerAgc ? 'Auto' : '${_manualGainDb.toStringAsFixed(1)} dB',
+                  _showGainSheet,
+                ),
                 _metric(
                   'VOL',
                   '${(_volume * 100).round()}%',
-                  () {
-                    setState(() {
-                      _volume += 0.1;
-                      if (_volume > 1.01) {
-                        _volume = 0.2;
-                      }
-                    });
-                    _audio.setVolume(_volume);
-                  },
+                  _showVolumeSheet,
                 ),
               ],
             ),
@@ -570,8 +564,11 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         setState(() {
           _mode = mode;
           _bandwidthKhz = switch (mode) {
-            'WFM' => 150,
+            'WFM' => 180,
             'NFM' => 12.5,
+            'USB' || 'LSB' => 2.7,
+            'CW' => 0.8,
+            'DSB' => 6.0,
             _ => 10,
           };
         });
@@ -892,6 +889,87 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                           onChanged: (value) {
                             setState(() => _tunerAgc = value);
                             _client.setTunerAgc(value);
+                            if (!value) {
+                              _client.setGainDb(_manualGainDb);
+                            }
+                          },
+                        ),
+                        if (!_tunerAgc) ...<Widget>[
+                          Text('Manual gain  ${_manualGainDb.toStringAsFixed(1)} dB'),
+                          Slider(
+                            value: _manualGainDb,
+                            min: -9.9,
+                            max: 19.7,
+                            divisions: 296,
+                            label: '${_manualGainDb.toStringAsFixed(1)} dB',
+                            onChanged: (value) {
+                              setState(() => _manualGainDb = value);
+                              _client.setGainDb(value);
+                            },
+                          ),
+                        ],
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('RTL AGC'),
+                          subtitle: const Text('RTL2832 digital AGC'),
+                          value: _rtlAgc,
+                          onChanged: (value) {
+                            setState(() => _rtlAgc = value);
+                            _client.setRtlAgc(value);
+                          },
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Bias-T'),
+                          subtitle: const Text('Enable antenna bias power when supported'),
+                          value: _biasTee,
+                          onChanged: (value) {
+                            setState(() => _biasTee = value);
+                            _client.setBiasTee(value);
+                          },
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Offset tuning'),
+                          value: _offsetTuning,
+                          onChanged: (value) {
+                            setState(() => _offsetTuning = value);
+                            _client.setOffsetTuning(value);
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<int>(
+                          initialValue: _directSampling,
+                          decoration: const InputDecoration(
+                            labelText: 'Direct sampling',
+                            prefixIcon: Icon(Icons.swap_vert_rounded),
+                            border: OutlineInputBorder(),
+                          ),
+                          items: const <DropdownMenuItem<int>>[
+                            DropdownMenuItem(value: 0, child: Text('Disabled')),
+                            DropdownMenuItem(value: 1, child: Text('I branch')),
+                            DropdownMenuItem(value: 2, child: Text('Q branch')),
+                          ],
+                          onChanged: (value) {
+                            if (value == null) {
+                              return;
+                            }
+                            setState(() => _directSampling = value);
+                            _client.setDirectSampling(value);
+                          },
+                        ),
+                        const SizedBox(height: 14),
+                        Text('Frequency correction  $_ppm ppm'),
+                        Slider(
+                          value: _ppm.toDouble(),
+                          min: -100,
+                          max: 100,
+                          divisions: 200,
+                          label: '$_ppm ppm',
+                          onChanged: (value) {
+                            final ppm = value.round();
+                            setState(() => _ppm = ppm);
+                            _client.setPpm(ppm);
                           },
                         ),
                         const SizedBox(height: 8),
@@ -940,6 +1018,174 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     );
   }
 
+  Future<void> _showBandwidthSheet() async {
+    const options = <double>[0.5, 0.8, 1.8, 2.4, 2.7, 3.0, 6.0, 8.0, 10.0, 12.5, 15.0, 25.0, 50.0, 100.0, 150.0, 180.0, 200.0];
+    final value = await showModalBottomSheet<double>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            for (final bw in options)
+              ChoiceChip(
+                selected: (_bandwidthKhz - bw).abs() < 0.01,
+                label: Text(bw >= 100 ? '${bw.toInt()} kHz' : '$bw kHz'),
+                onSelected: (_) => Navigator.of(context).pop(bw),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (value != null) {
+      setState(() => _bandwidthKhz = value);
+      _client.setBandwidth(value * 1000);
+    }
+  }
+
+  Future<void> _showSquelchSheet() async {
+    var enabled = _squelchEnabled;
+    var threshold = _squelchDb;
+    final result = await showModalBottomSheet<(bool, double)>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Squelch'),
+                subtitle: const Text('Mute audio below the RF threshold'),
+                value: enabled,
+                onChanged: (value) => setSheetState(() => enabled = value),
+              ),
+              Text('Threshold  ${threshold.toStringAsFixed(0)} dBFS'),
+              Slider(
+                value: threshold,
+                min: -100,
+                max: -20,
+                divisions: 80,
+                label: '${threshold.toStringAsFixed(0)} dBFS',
+                onChanged: enabled
+                    ? (value) => setSheetState(() => threshold = value)
+                    : null,
+              ),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).pop((enabled, threshold)),
+                  child: const Text('Apply'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (result != null) {
+      setState(() {
+        _squelchEnabled = result.$1;
+        _squelchDb = result.$2;
+      });
+      _client.setSquelch(_squelchEnabled, _squelchDb);
+    }
+  }
+
+  Future<void> _showGainSheet() async {
+    var auto = _tunerAgc;
+    var gain = _manualGainDb;
+    final result = await showModalBottomSheet<(bool, double)>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Automatic tuner gain'),
+                value: auto,
+                onChanged: (value) => setSheetState(() => auto = value),
+              ),
+              Text('Manual gain  ${gain.toStringAsFixed(1)} dB'),
+              Slider(
+                value: gain,
+                min: -9.9,
+                max: 19.7,
+                divisions: 296,
+                label: '${gain.toStringAsFixed(1)} dB',
+                onChanged: auto
+                    ? null
+                    : (value) => setSheetState(() => gain = value),
+              ),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).pop((auto, gain)),
+                  child: const Text('Apply'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (result != null) {
+      setState(() {
+        _tunerAgc = result.$1;
+        _manualGainDb = result.$2;
+      });
+      _client.setTunerAgc(_tunerAgc);
+      if (!_tunerAgc) {
+        _client.setGainDb(_manualGainDb);
+      }
+    }
+  }
+
+  Future<void> _showVolumeSheet() async {
+    var volume = _volume;
+    final result = await showModalBottomSheet<double>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text('Volume  ${(volume * 100).round()}%'),
+              Slider(
+                value: volume,
+                onChanged: (value) {
+                  setSheetState(() => volume = value);
+                  _audio.setVolume(value);
+                },
+              ),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).pop(volume),
+                  child: const Text('Done'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (result != null) {
+      setState(() => _volume = result);
+      _audio.setVolume(result);
+    }
+  }
+
   Future<void> _connect() async {
     final port = int.tryParse(_portController.text.trim()) ?? 1234;
     setState(() {
@@ -959,6 +1205,15 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         bandwidthHz: _bandwidthKhz * 1000,
       );
       _client.setTunerAgc(_tunerAgc);
+      if (!_tunerAgc) {
+        _client.setGainDb(_manualGainDb);
+      }
+      _client.setRtlAgc(_rtlAgc);
+      _client.setBiasTee(_biasTee);
+      _client.setOffsetTuning(_offsetTuning);
+      _client.setDirectSampling(_directSampling);
+      _client.setPpm(_ppm);
+      _client.setSquelch(_squelchEnabled, _squelchDb);
       if (mounted) {
         setState(() => _tab = 0);
       }
