@@ -16,6 +16,8 @@ class RtlTcpClient {
   Socket? _socket;
   StreamSubscription<Uint8List>? _subscription;
   final _stateController = StreamController<RtlTcpConnectionState>.broadcast();
+  BytesBuilder _iqBuffer = BytesBuilder(copy: false);
+  static const int _iqBatchBytes = 64 * 1024;
 
   RtlTcpConnectionState _state = RtlTcpConnectionState.disconnected;
   String _lastError = '';
@@ -50,6 +52,7 @@ class RtlTcpClient {
     _setState(RtlTcpConnectionState.connecting);
     _lastError = '';
     _headerBytesRemaining = 12;
+    _iqBuffer = BytesBuilder(copy: false);
     _frequencyHz = frequencyHz;
     _sampleRateHz = sampleRateHz;
     _mode = mode;
@@ -102,12 +105,14 @@ class RtlTcpClient {
     await subscription?.cancel();
     _socket?.destroy();
     _socket = null;
+    _iqBuffer = BytesBuilder(copy: false);
     _dsp.reset();
     _setState(RtlTcpConnectionState.disconnected);
   }
 
   void setFrequency(int frequencyHz) {
     _frequencyHz = frequencyHz;
+    _dsp.reset();
     if (_state == RtlTcpConnectionState.connected) {
       _sendCommand(1, frequencyHz);
     }
@@ -137,10 +142,51 @@ class RtlTcpClient {
     }
   }
 
+  void setGainDb(double gainDb) {
+    if (_state == RtlTcpConnectionState.connected) {
+      _sendCommand(3, 1);
+      _sendCommand(4, (gainDb * 10).round());
+    }
+  }
+
   void setGainIndex(int index) {
     if (_state == RtlTcpConnectionState.connected) {
       _sendCommand(13, index);
     }
+  }
+
+  void setPpm(int ppm) {
+    if (_state == RtlTcpConnectionState.connected) {
+      _sendCommand(5, ppm);
+    }
+  }
+
+  void setRtlAgc(bool enabled) {
+    if (_state == RtlTcpConnectionState.connected) {
+      _sendCommand(8, enabled ? 1 : 0);
+    }
+  }
+
+  void setDirectSampling(int mode) {
+    if (_state == RtlTcpConnectionState.connected) {
+      _sendCommand(9, mode.clamp(0, 2));
+    }
+  }
+
+  void setOffsetTuning(bool enabled) {
+    if (_state == RtlTcpConnectionState.connected) {
+      _sendCommand(10, enabled ? 1 : 0);
+    }
+  }
+
+  void setBiasTee(bool enabled) {
+    if (_state == RtlTcpConnectionState.connected) {
+      _sendCommand(14, enabled ? 1 : 0);
+    }
+  }
+
+  void setSquelch(bool enabled, double thresholdDb) {
+    _dsp.setSquelch(enabled, thresholdDb);
   }
 
   void _setState(RtlTcpConnectionState value) {
@@ -158,7 +204,7 @@ class RtlTcpClient {
 
     final bytes = ByteData(5)
       ..setUint8(0, command)
-      ..setUint32(1, parameter, Endian.big);
+      ..setUint32(1, parameter & 0xFFFFFFFF, Endian.big);
     socket.add(bytes.buffer.asUint8List());
   }
 
@@ -174,8 +220,26 @@ class RtlTcpClient {
       _headerBytesRemaining = 0;
     }
 
-    if (data.isNotEmpty) {
-      _dsp.addIq(data);
+    if (data.isEmpty) {
+      return;
+    }
+
+    // TCP packet boundaries do not match IQ sample boundaries. Buffer into
+    // larger even-sized blocks so I/Q pairs never lose alignment and the DSP
+    // isolate is not flooded with tiny messages.
+    _iqBuffer.add(data);
+    if (_iqBuffer.length < _iqBatchBytes) {
+      return;
+    }
+
+    final batch = _iqBuffer.takeBytes();
+    _iqBuffer = BytesBuilder(copy: false);
+    final evenLength = batch.length & ~1;
+    if (evenLength > 0) {
+      _dsp.addIq(Uint8List.sublistView(batch, 0, evenLength));
+    }
+    if (evenLength != batch.length) {
+      _iqBuffer.addByte(batch.last);
     }
   }
 
