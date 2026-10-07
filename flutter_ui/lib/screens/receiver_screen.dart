@@ -375,7 +375,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
 
   Widget _spectrumCard() {
     final streamLabel = _connectionState == RtlTcpConnectionState.connected
-        ? (_sampleRateHz / 1000000).toStringAsFixed(3) + ' MSPS'
+        ? '\${(_sampleRateHz / 1000000).toStringAsFixed(3)} MSPS'
         : 'No RF stream';
 
     return Card(
@@ -465,7 +465,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
               children: <Widget>[
                 _metric(
                   'BW',
-                  _bandwidthKhz.toStringAsFixed(0) + ' kHz',
+                  '\${_bandwidthKhz.toStringAsFixed(0)} kHz',
                   () {
                     setState(() {
                       _bandwidthKhz = _bandwidthKhz == 10 ? 12 : 10;
@@ -482,7 +482,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                 }),
                 _metric(
                   'VOL',
-                  (_volume * 100).round().toString() + '%',
+                  '\${(_volume * 100).round()}%',
                   () {
                     setState(() {
                       _volume += 0.1;
@@ -685,7 +685,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    '25 kHz step · peak +' + snr.toStringAsFixed(1) + ' dB',
+                    '25 kHz step · peak +\${snr.toStringAsFixed(1)} dB',
                     style: const TextStyle(color: Color(0xFF8294A9)),
                   ),
                   const SizedBox(height: 18),
@@ -726,7 +726,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                       return ListTile(
                         leading: const Icon(Icons.wifi_tethering_rounded),
                         title: Text(
-                          (frequency / 1000000).toStringAsFixed(3) + ' MHz',
+                          '\${(frequency / 1000000).toStringAsFixed(3)} MHz',
                         ),
                         subtitle: const Text('Activity detected'),
                         trailing: IconButton(
@@ -991,7 +991,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    text + ' MHz',
+                    '\$text MHz',
                     style: const TextStyle(
                       fontSize: 34,
                       fontWeight: FontWeight.w800,
@@ -1219,16 +1219,16 @@ class SpectrumPainter extends CustomPainter {
     final leftMhz = (centerFrequencyHz - sampleRateHz / 2) / 1000000;
     final centerMhz = centerFrequencyHz / 1000000;
     final rightMhz = (centerFrequencyHz + sampleRateHz / 2) / 1000000;
-    _drawLabel(canvas, leftMhz.toStringAsFixed(3) + 'M', 8, size.height - 22);
+    _drawLabel(canvas, '\${leftMhz.toStringAsFixed(3)}M', 8, size.height - 22);
     _drawLabel(
       canvas,
-      centerMhz.toStringAsFixed(3) + 'M',
+      '\${centerMhz.toStringAsFixed(3)}M',
       center - 30,
       size.height - 22,
     );
     _drawLabel(
       canvas,
-      rightMhz.toStringAsFixed(3) + 'M',
+      '\${rightMhz.toStringAsFixed(3)}M',
       size.width - 70,
       size.height - 22,
     );
