@@ -11,6 +11,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  native-host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure native SDR++ DSP bridge
+        run: cmake -S mobile/native -B build/native-host -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Compile native SDR++ DSP bridge
+        run: cmake --build build/native-host --parallel 2
+
   android:
     runs-on: ubuntu-latest
     defaults:
