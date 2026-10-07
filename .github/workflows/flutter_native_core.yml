@@ -1,0 +1,69 @@
+name: Flutter Native SDR++ Core
+
+on:
+  push:
+    branches:
+      - flutter-native-core
+  workflow_dispatch:
+
+concurrency:
+  group: flutter-native-core-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter_ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android runner
+        run: flutter create --org com.smallfishworld --project-name sdrpp_flutter --platforms=android .
+
+      - name: Enable Android network access
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+          if "android.permission.INTERNET" not in s:
+              s = s.replace(
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
+                  '    <uses-permission android:name="android.permission.INTERNET" />')
+          s = s.replace('android:label="sdrpp_flutter"', 'android:label="SDR++ Native"')
+          p.write_text(s)
+          PY
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Build official SDR++ DSP native bridge
+        shell: bash
+        run: |
+          set -euxo pipefail
+          NDK="${ANDROID_NDK_ROOT:-${ANDROID_NDK_HOME:-}}"
+          test -n "$NDK"
+          cmake             -S ../mobile/native             -B build/sdrpp-native-arm64             -G Ninja             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake"             -DANDROID_ABI=arm64-v8a             -DANDROID_PLATFORM=android-23             -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/sdrpp-native-arm64 --parallel 2
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          cp build/sdrpp-native-arm64/libsdrpp_mobile.so              android/app/src/main/jniLibs/arm64-v8a/libsdrpp_mobile.so
+          file android/app/src/main/jniLibs/arm64-v8a/libsdrpp_mobile.so
+
+      - name: Analyze Flutter app
+        run: flutter analyze lib
+
+      - name: Build Android APK
+        run: flutter build apk --release --target-platform android-arm64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdrpp-flutter-native-android
+          path: flutter_ui/build/app/outputs/flutter-apk/app-release.apk
