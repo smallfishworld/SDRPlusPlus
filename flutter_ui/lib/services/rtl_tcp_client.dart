@@ -36,6 +36,7 @@ class RtlTcpClient {
 
   Stream<Float32List> get spectrumStream => _dsp.spectrumStream;
   Stream<Uint8List> get audioStream => _dsp.audioStream;
+  Stream<String> get backendStream => _dsp.backendStream;
   Stream<RtlTcpConnectionState> get stateStream => _stateController.stream;
 
   Future<void> connect({
@@ -112,10 +113,14 @@ class RtlTcpClient {
 
   void setFrequency(int frequencyHz) {
     _frequencyHz = frequencyHz;
-    _dsp.reset();
     if (_state == RtlTcpConnectionState.connected) {
       _sendCommand(1, frequencyHz);
     }
+    // Drop IQ already accumulated for the old channel and reset the complete
+    // DSP state after issuing the tuner command. The UI also debounces an
+    // audio-stream restart after interactive retuning.
+    _iqBuffer = BytesBuilder(copy: false);
+    _dsp.reset();
   }
 
   void setSampleRate(int sampleRateHz) {
