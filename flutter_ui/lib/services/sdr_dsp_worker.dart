@@ -146,21 +146,28 @@ void _sdrDspWorkerMain(SendPort mainPort) {
           mode: message['mode'] as String,
           bandwidthHz: (message['bandwidthHz'] as num).toDouble(),
         );
+        break;
       case 'mode':
         processor.setMode(message['mode'] as String);
+        break;
       case 'bandwidth':
         processor.setBandwidth((message['bandwidthHz'] as num).toDouble());
+        break;
       case 'sampleRate':
         processor.setSampleRate(message['sampleRateHz'] as int);
+        break;
       case 'iq':
         final data = message['data'];
         if (data is TransferableTypedData) {
           processor.processIq(data.materialize().asUint8List());
         }
+        break;
       case 'reset':
         processor.reset();
+        break;
       case 'stop':
         commandPort.close();
+        break;
     }
   });
 }
