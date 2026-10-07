@@ -97,7 +97,7 @@ print(f"Generated branding: {master}")
 # Dark launch background for Android startup.
 drawable_xml = """<?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="#080B10" />
+    <item android:drawable="@color/sdrpp_splash_background" />
     <item>
         <bitmap
             android:gravity="center"
