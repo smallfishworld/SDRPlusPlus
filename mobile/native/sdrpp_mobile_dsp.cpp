@@ -495,6 +495,22 @@ int sdrpp_dsp_set_bandwidth(
     }
 }
 
+int sdrpp_dsp_set_squelch(
+    sdrpp_engine_t engine,
+    int enabled,
+    float level_db) {
+    if (!engine) {
+        return -1;
+    }
+    try {
+        asEngine(engine)->setSquelch(enabled != 0, level_db);
+        return 0;
+    }
+    catch (...) {
+        return -1;
+    }
+}
+
 void sdrpp_dsp_reset(sdrpp_engine_t engine) {
     if (!engine) {
         return;
