@@ -1,0 +1,33 @@
+name: Flutter UI Check
+
+on:
+  push:
+    branches:
+      - flutter-mobile-ui
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  flutter-ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter_ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate platform runners
+        run: flutter create --platforms=android,ios,windows,macos .
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
