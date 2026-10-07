@@ -242,7 +242,7 @@ class _DspProcessor {
   bool _squelchEnabled = false;
   double _squelchThresholdDb = -82;
 
-  final Int16List _pcm = Int16List(960);
+  final Int16List _pcm = Int16List(1920);
   int _pcmCount = 0;
 
   void configure({
@@ -492,7 +492,12 @@ class _DspProcessor {
     final scaled = (sample * 26000)
         .clamp(-32767.0, 32767.0)
         .round();
-    _pcm[_pcmCount++] = scaled;
+    // Fallback path is mono; duplicate each sample to stereo so the
+    // audio sink contract stays identical to the native SDR++ backend.
+    if (_pcmCount + 1 < _pcm.length) {
+      _pcm[_pcmCount++] = scaled;
+      _pcm[_pcmCount++] = scaled;
+    }
 
     if (_pcmCount >= _pcm.length) {
       final bytes = Uint8List(_pcm.length * 2);
