@@ -102,9 +102,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
 
     // Common amateur-radio receive presets around Hangzhou.
     _Preset('杭州 2m 常用直频', 145100000, 'NFM', 12500, 'Amateur Radio'),
+    _Preset('BR5AI 杭州中继下行', 145400000, 'NFM', 12500, 'Amateur Radio'),
     _Preset('UHF 常用直频', 438500000, 'NFM', 12500, 'Amateur Radio'),
-    _Preset('杭州 2m 中继下行（历史）', 145550000, 'NFM', 12500, 'Amateur Radio'),
-    _Preset('杭州 70cm 中继下行（历史）', 439800000, 'NFM', 12500, 'Amateur Radio'),
   ];
 
   @override
