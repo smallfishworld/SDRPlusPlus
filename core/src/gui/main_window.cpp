@@ -28,6 +28,102 @@
 #include <gui/widgets/snr_meter.h>
 #include <gui/tuner.h>
 
+#ifdef __ANDROID__
+#include "../../../decoder_modules/radio/src/radio_interface.h"
+#endif
+
+#ifdef __ANDROID__
+namespace {
+    bool getSelectedRadioInterface(std::string& name) {
+        name = gui::waterfall.selectedVFO;
+        if (name.empty() || !core::modComManager.interfaceExists(name)) { return false; }
+        return core::modComManager.getModuleName(name) == "radio";
+    }
+
+    void persistMobileMenuState(bool visible) {
+        core::configManager.acquire();
+        core::configManager.conf["showMenu"] = visible;
+        core::configManager.release(true);
+    }
+
+    void drawMobileRadioQuickBar(bool& showMenu) {
+        const float scale = style::uiScale;
+        std::string radioName;
+
+        ImGui::Separator();
+        if (!getSelectedRadioInterface(radioName)) {
+            if (ImGui::Button("Controls", ImVec2(ImGui::GetContentRegionAvail().x, 28.0f * scale))) {
+                showMenu = true;
+                persistMobileMenuState(true);
+            }
+            return;
+        }
+
+        int mode = RADIO_IFACE_MODE_WFM;
+        core::modComManager.callInterface(radioName, RADIO_IFACE_CMD_GET_MODE, nullptr, &mode);
+
+        const char* labels[] = { "NFM", "WFM", "AM", "USB", "LSB" };
+        const int modes[] = {
+            RADIO_IFACE_MODE_NFM,
+            RADIO_IFACE_MODE_WFM,
+            RADIO_IFACE_MODE_AM,
+            RADIO_IFACE_MODE_USB,
+            RADIO_IFACE_MODE_LSB
+        };
+
+        const float spacing = ImGui::GetStyle().ItemSpacing.x;
+        const float totalWidth = ImGui::GetContentRegionAvail().x;
+        const float moreWidth = 62.0f * scale;
+        const float modeWidth = std::max(42.0f * scale, (totalWidth - moreWidth - (5.0f * spacing)) / 5.0f);
+        const ImVec2 modeSize(modeWidth, 27.0f * scale);
+
+        for (int i = 0; i < 5; i++) {
+            if (i != 0) { ImGui::SameLine(); }
+            if (mode == modes[i]) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+            }
+            if (ImGui::Button(labels[i], modeSize) && mode != modes[i]) {
+                int requested = modes[i];
+                core::modComManager.callInterface(radioName, RADIO_IFACE_CMD_SET_MODE, &requested, nullptr);
+                mode = requested;
+            }
+            if (mode == modes[i]) { ImGui::PopStyleColor(); }
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("More", ImVec2(moreWidth, modeSize.y))) {
+            showMenu = true;
+            persistMobileMenuState(true);
+        }
+
+        float bandwidth = 0.0f;
+        core::modComManager.callInterface(radioName, RADIO_IFACE_CMD_GET_BANDWIDTH, nullptr, &bandwidth);
+        float step = 1000.0f;
+        if (bandwidth >= 30000.0f) { step = 5000.0f; }
+        if (bandwidth >= 150000.0f) { step = 10000.0f; }
+
+        const ImVec2 bwButtonSize(72.0f * scale, 24.0f * scale);
+        if (ImGui::Button("- BW", bwButtonSize)) {
+            float requested = std::max(1000.0f, bandwidth - step);
+            core::modComManager.callInterface(radioName, RADIO_IFACE_CMD_SET_BANDWIDTH, &requested, nullptr);
+            bandwidth = requested;
+        }
+        ImGui::SameLine();
+        if (bandwidth >= 1000.0f) {
+            ImGui::Text("BW %.1f kHz", bandwidth / 1000.0f);
+        }
+        else {
+            ImGui::Text("BW %.0f Hz", bandwidth);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("BW +", bwButtonSize)) {
+            float requested = bandwidth + step;
+            core::modComManager.callInterface(radioName, RADIO_IFACE_CMD_SET_BANDWIDTH, &requested, nullptr);
+        }
+    }
+}
+#endif
+
 void MainWindow::init() {
     LoadingScreen::show("Initializing UI");
     gui::waterfall.init();
@@ -329,6 +425,48 @@ void MainWindow::draw() {
         core::configManager.release(true);
     }
 
+#ifdef __ANDROID__
+    // Mobile top bar: controls first, frequency on its own row, no desktop-only SNR/logo clutter.
+    ImVec2 btnSize(28.0f * style::uiScale, 28.0f * style::uiScale);
+    ImGui::PushID(ImGui::GetID("sdrpp_menu_btn_mobile"));
+    if (ImGui::ImageButton(icons::MENU, btnSize, ImVec2(0, 0), ImVec2(1, 1), 6, ImVec4(0, 0, 0, 0), textCol)) {
+        showMenu = !showMenu;
+        persistMobileMenuState(showMenu);
+    }
+    ImGui::PopID();
+
+    ImGui::SameLine();
+    bool tmpPlaySate = playing;
+    if (playButtonLocked && !tmpPlaySate) { style::beginDisabled(); }
+    if (playing) {
+        ImGui::PushID(ImGui::GetID("sdrpp_stop_btn_mobile"));
+        if (ImGui::ImageButton(icons::STOP, btnSize, ImVec2(0, 0), ImVec2(1, 1), 6, ImVec4(0, 0, 0, 0), textCol)) {
+            setPlayState(false);
+        }
+        ImGui::PopID();
+    }
+    else {
+        ImGui::PushID(ImGui::GetID("sdrpp_play_btn_mobile"));
+        if (ImGui::ImageButton(icons::PLAY, btnSize, ImVec2(0, 0), ImVec2(1, 1), 6, ImVec4(0, 0, 0, 0), textCol)) {
+            setPlayState(true);
+        }
+        ImGui::PopID();
+    }
+    if (playButtonLocked && !tmpPlaySate) { style::endDisabled(); }
+
+    ImGui::SameLine();
+    const float volumeWidth = std::max(120.0f * style::uiScale, ImGui::GetContentRegionAvail().x - (8.0f * style::uiScale));
+    sigpath::sinkManager.showVolumeSlider(gui::waterfall.selectedVFO, "##_sdrpp_main_volume_mobile_", volumeWidth, btnSize.x, 6, true);
+
+    ImGui::Spacing();
+    gui::freqSelect.draw();
+    ImGui::Spacing();
+
+    if (autostart) {
+        autostart = false;
+        setPlayState(true);
+    }
+#else
     // To Bar
     // ImGui::BeginChild("TopBarChild", ImVec2(0, 49.0f * style::uiScale), false, ImGuiWindowFlags_HorizontalScrollbar);
     ImVec2 btnSize(30 * style::uiScale, 30 * style::uiScale);
@@ -420,6 +558,9 @@ void MainWindow::draw() {
 
     // ImGui::EndChild();
 
+#endif
+
+#ifndef __ANDROID__
     // Logo button
     ImGui::SetCursorPosX(ImGui::GetWindowSize().x - (48 * style::uiScale));
     ImGui::SetCursorPosY(10.0f * style::uiScale);
@@ -433,9 +574,69 @@ void MainWindow::draw() {
         showCredits = false;
     }
 
+#endif
+
     // Reset waterfall lock
     lockWaterfallControls = showCredits;
 
+#ifdef __ANDROID__
+    // Phone/tablet layout. Portrait stacks the drawer over the waterfall; landscape uses a side drawer.
+    displaymenu::checkKeybinds();
+    ImVec2 mobileAvail = ImGui::GetContentRegionAvail();
+    const float controlsHeight = 76.0f * style::uiScale;
+
+    auto drawMobileMenu = [&]() {
+        if (gui::menu.draw(firstMenuRender)) {
+            core::configManager.acquire();
+            json arr = json::array();
+            for (int i = 0; i < gui::menu.order.size(); i++) {
+                arr[i]["name"] = gui::menu.order[i].name;
+                arr[i]["open"] = gui::menu.order[i].open;
+            }
+            core::configManager.conf["menuElements"] = arr;
+            for (auto [_name, inst] : core::moduleManager.instances) {
+                if (!core::configManager.conf["moduleInstances"].contains(_name)) { continue; }
+                core::configManager.conf["moduleInstances"][_name]["enabled"] = inst.instance->isEnabled();
+            }
+            core::configManager.release(true);
+        }
+        if (startedWithMenuClosed) { startedWithMenuClosed = false; }
+        else { firstMenuRender = false; }
+    };
+
+    const bool landscape = mobileAvail.x > mobileAvail.y;
+    if (showMenu && landscape) {
+        const float menuW = std::min(mobileAvail.x * 0.38f, 320.0f * style::uiScale);
+        const float contentH = std::max(80.0f * style::uiScale, mobileAvail.y - controlsHeight);
+        ImGui::BeginChild("MobileMenu", ImVec2(menuW, contentH), true);
+        drawMobileMenu();
+        ImGui::EndChild();
+        ImGui::SameLine();
+        ImGui::BeginChild("Waterfall", ImVec2(0, contentH));
+        gui::waterfall.draw();
+        ImGui::EndChild();
+    }
+    else if (showMenu) {
+        const float menuH = std::min(mobileAvail.y * 0.36f, 240.0f * style::uiScale);
+        ImGui::BeginChild("MobileMenu", ImVec2(0, menuH), true);
+        drawMobileMenu();
+        ImGui::EndChild();
+        const float waterfallH = std::max(80.0f * style::uiScale, mobileAvail.y - menuH - controlsHeight);
+        ImGui::BeginChild("Waterfall", ImVec2(0, waterfallH));
+        gui::waterfall.draw();
+        ImGui::EndChild();
+    }
+    else {
+        const float waterfallH = std::max(80.0f * style::uiScale, mobileAvail.y - controlsHeight);
+        ImGui::BeginChild("Waterfall", ImVec2(0, waterfallH));
+        gui::waterfall.draw();
+        ImGui::EndChild();
+    }
+
+    ImGui::BeginChild("MobileQuickControls", ImVec2(0, controlsHeight), false);
+    drawMobileRadioQuickBar(showMenu);
+    ImGui::EndChild();
+#else
     // Handle menu resize
     ImVec2 winSize = ImGui::GetWindowSize();
     ImVec2 mousePos = ImGui::GetMousePos();
@@ -549,6 +750,8 @@ void MainWindow::draw() {
 
     ImGui::EndChild();
 
+#endif
+
     if (!lockWaterfallControls) {
         // Handle arrow keys
         if (vfo != NULL && (gui::waterfall.mouseInFFT || gui::waterfall.mouseInWaterfall)) {
@@ -609,6 +812,7 @@ void MainWindow::draw() {
         }
     }
 
+#ifndef __ANDROID__
     ImGui::NextColumn();
     ImGui::BeginChild("WaterfallControls");
 
@@ -656,6 +860,7 @@ void MainWindow::draw() {
     }
 
     ImGui::EndChild();
+#endif
 
     gui::waterfall.setFFTMin(fftMin);
     gui::waterfall.setFFTMax(fftMax);
