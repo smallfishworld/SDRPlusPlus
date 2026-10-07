@@ -13,7 +13,7 @@ class SdrppApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'SDR++',
+      title: 'SDR++ Receiver',
       theme: AppTheme.dark(),
       home: const ReceiverScreen(),
     );
