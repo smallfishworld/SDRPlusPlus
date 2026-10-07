@@ -362,12 +362,12 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      mhz.toStringAsFixed(3),
+                      mhz.toStringAsFixed(6),
                       style: const TextStyle(
-                        fontSize: 38,
+                        fontSize: 34,
                         height: 1,
                         fontWeight: FontWeight.w800,
-                        letterSpacing: 0.5,
+                        letterSpacing: 0.2,
                       ),
                     ),
                     const SizedBox(height: 7),
@@ -425,46 +425,59 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: <Widget>[
-          Positioned.fill(
-            child: Column(
-              children: <Widget>[
-                Expanded(
-                  flex: 43,
-                  child: CustomPaint(
-                    painter: SpectrumPainter(
-                      spectrum: _spectrum,
-                      centerFrequencyHz: _frequencyHz,
-                      sampleRateHz: _sampleRateHz,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragStart: (_) => _dragAccumulatorPx = 0,
+        onHorizontalDragUpdate: (details) =>
+            _handleSpectrumDrag(details.primaryDelta ?? 0),
+        onHorizontalDragEnd: (_) => _dragAccumulatorPx = 0,
+        onDoubleTap: _showFrequencyPad,
+        child: Stack(
+          children: <Widget>[
+            Positioned.fill(
+              child: Column(
+                children: <Widget>[
+                  Expanded(
+                    flex: 43,
+                    child: CustomPaint(
+                      painter: SpectrumPainter(
+                        spectrum: _spectrum,
+                        centerFrequencyHz: _frequencyHz,
+                        sampleRateHz: _sampleRateHz,
+                      ),
+                      child: const SizedBox.expand(),
                     ),
-                    child: const SizedBox.expand(),
                   ),
-                ),
-                const Divider(height: 1, color: Color(0xFF1B2835)),
-                Expanded(
-                  flex: 57,
-                  child: CustomPaint(
-                    painter: WaterfallPainter(
-                      history: _waterfall,
+                  const Divider(height: 1, color: Color(0xFF1B2835)),
+                  Expanded(
+                    flex: 57,
+                    child: CustomPaint(
+                      painter: WaterfallPainter(
+                        history: _waterfall,
+                      ),
+                      child: const SizedBox.expand(),
                     ),
-                    child: const SizedBox.expand(),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          Positioned(
-            left: 12,
-            top: 10,
-            child: _tinyBadge(streamLabel),
-          ),
-          Positioned(
-            right: 12,
-            top: 10,
-            child: _tinyBadge(_mode),
-          ),
-        ],
+            Positioned(
+              left: 12,
+              top: 10,
+              child: _tinyBadge(streamLabel),
+            ),
+            Positioned(
+              right: 12,
+              top: 10,
+              child: _tinyBadge(_mode),
+            ),
+            Positioned(
+              left: 12,
+              bottom: 10,
+              child: _tinyBadge('Drag to tune · step ${_formatStep(_tuningStepHz)}'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -494,16 +507,20 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         padding: const EdgeInsets.all(10),
         child: Column(
           children: <Widget>[
-            Row(
-              children: <Widget>[
-                for (final mode in _modes)
-                  Expanded(
-                    child: Padding(
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: <Widget>[
+                  for (final mode in _modes)
+                    Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 3),
-                      child: _modeButton(mode),
+                      child: SizedBox(
+                        width: 72,
+                        child: _modeButton(mode),
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
             const SizedBox(height: 8),
             Row(
@@ -971,6 +988,31 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     _client.setFrequency(clamped);
   }
 
+  void _handleSpectrumDrag(double deltaPx) {
+    _dragAccumulatorPx += deltaPx;
+    const pixelsPerStep = 7.0;
+    final wholeSteps = (_dragAccumulatorPx / pixelsPerStep).truncate();
+    if (wholeSteps == 0) {
+      return;
+    }
+    _dragAccumulatorPx -= wholeSteps * pixelsPerStep;
+    // Dragging the spectrum to the right moves the RF view down in frequency.
+    _tuneFrequency(_frequencyHz - wholeSteps * _tuningStepHz);
+  }
+
+  String _formatStep(int hz) {
+    if (hz >= 1000000) {
+      return '${hz / 1000000} MHz';
+    }
+    if (hz >= 1000) {
+      final khz = hz / 1000;
+      return khz == khz.roundToDouble()
+          ? '${khz.toInt()} kHz'
+          : '${khz.toStringAsFixed(2)} kHz';
+    }
+    return '$hz Hz';
+  }
+
   String _presetNameFor(int frequencyHz) {
     for (final preset in _presets) {
       if ((preset.frequencyHz - frequencyHz).abs() <= 1000) {
@@ -991,9 +1033,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   }
 
   Future<void> _showFrequencyPad() async {
-    var text = (_frequencyHz / 1000000).toStringAsFixed(3);
+    var unit = 'MHz';
+    var text = (_frequencyHz / 1000000).toStringAsFixed(6);
 
-    final result = await showModalBottomSheet<double>(
+    final result = await showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -1001,6 +1044,17 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
+            void changeUnit(String nextUnit) {
+              setSheetState(() {
+                unit = nextUnit;
+                text = switch (unit) {
+                  'Hz' => _frequencyHz.toString(),
+                  'kHz' => (_frequencyHz / 1000).toStringAsFixed(3),
+                  _ => (_frequencyHz / 1000000).toStringAsFixed(6),
+                };
+              });
+            }
+
             void press(String value) {
               setSheetState(() {
                 if (value == 'back') {
@@ -1012,10 +1066,22 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                 if (value == '.' && text.contains('.')) {
                   return;
                 }
-                if (text.length < 10) {
+                if (text.length < 14) {
                   text += value;
                 }
               });
+            }
+
+            int? parseHz() {
+              final value = double.tryParse(text);
+              if (value == null || value <= 0) {
+                return null;
+              }
+              return switch (unit) {
+                'Hz' => value.round(),
+                'kHz' => (value * 1000).round(),
+                _ => (value * 1000000).round(),
+              };
             }
 
             return Padding(
@@ -1032,56 +1098,112 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                     'Tune frequency',
                     style: TextStyle(color: Color(0xFF8193A8)),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
                   Text(
-                    '$text MHz',
+                    '$text $unit',
                     style: const TextStyle(
-                      fontSize: 34,
+                      fontSize: 30,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+                  SegmentedButton<String>(
+                    segments: const <ButtonSegment<String>>[
+                      ButtonSegment(value: 'Hz', label: Text('Hz')),
+                      ButtonSegment(value: 'kHz', label: Text('kHz')),
+                      ButtonSegment(value: 'MHz', label: Text('MHz')),
+                    ],
+                    selected: <String>{unit},
+                    onSelectionChanged: (value) => changeUnit(value.first),
+                  ),
+                  const SizedBox(height: 12),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: <Widget>[
+                        for (final step in _tuningSteps)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 7),
+                            child: ChoiceChip(
+                              selected: _tuningStepHz == step,
+                              label: Text(_formatStep(step)),
+                              onSelected: (_) {
+                                setState(() => _tuningStepHz = step);
+                                setSheetState(() {});
+                              },
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   GridView.count(
                     crossAxisCount: 3,
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    childAspectRatio: 2.15,
+                    childAspectRatio: 2.2,
                     mainAxisSpacing: 8,
                     crossAxisSpacing: 8,
                     children: <Widget>[
                       for (final key in const <String>[
-                        '1',
-                        '2',
-                        '3',
-                        '4',
-                        '5',
-                        '6',
-                        '7',
-                        '8',
-                        '9',
-                        '.',
-                        '0',
-                        'back',
+                        '1', '2', '3', '4', '5', '6',
+                        '7', '8', '9', '.', '0', 'back',
                       ])
                         FilledButton.tonal(
                           onPressed: () => press(key),
                           child: key == 'back'
                               ? const Icon(Icons.backspace_outlined)
-                              : Text(
-                                  key,
-                                  style: const TextStyle(fontSize: 20),
-                                ),
+                              : Text(key, style: const TextStyle(fontSize: 20)),
                         ),
                     ],
                   ),
                   const SizedBox(height: 12),
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            final hz = parseHz();
+                            if (hz != null) {
+                              setSheetState(() {
+                                final next = hz - _tuningStepHz;
+                                text = switch (unit) {
+                                  'Hz' => next.toString(),
+                                  'kHz' => (next / 1000).toStringAsFixed(3),
+                                  _ => (next / 1000000).toStringAsFixed(6),
+                                };
+                              });
+                            }
+                          },
+                          child: Text('- ${_formatStep(_tuningStepHz)}'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            final hz = parseHz();
+                            if (hz != null) {
+                              setSheetState(() {
+                                final next = hz + _tuningStepHz;
+                                text = switch (unit) {
+                                  'Hz' => next.toString(),
+                                  'kHz' => (next / 1000).toStringAsFixed(3),
+                                  _ => (next / 1000000).toStringAsFixed(6),
+                                };
+                              });
+                            }
+                          },
+                          child: Text('+ ${_formatStep(_tuningStepHz)}'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: () {
-                        final mhz = double.tryParse(text);
-                        Navigator.of(context).pop(mhz);
-                      },
+                      onPressed: () => Navigator.of(context).pop(parseHz()),
                       child: const Text('Tune'),
                     ),
                   ),
@@ -1094,7 +1216,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     );
 
     if (result != null && result > 0) {
-      _tuneFrequency((result * 1000000).round());
+      _tuneFrequency(result);
     }
   }
 
