@@ -67,8 +67,9 @@ SDRPP_MOBILE_API void sdrpp_dsp_reset(sdrpp_engine_t engine);
  * Process interleaved unsigned 8-bit RTL-TCP IQ:
  *   I0 Q0 I1 Q1 ...
  *
- * Output is signed 16-bit mono PCM at 48 kHz. The return value is the number
- * of PCM samples written to out_pcm.
+ * Output is signed 16-bit interleaved stereo PCM at 48 kHz. Mono modes are
+ * duplicated to L/R; WFM uses SDR++ BroadcastFM stereo decoding. The return
+ * value is the number of int16 values written to out_pcm (two per frame).
  */
 SDRPP_MOBILE_API size_t sdrpp_dsp_process_u8(
     sdrpp_engine_t engine,
