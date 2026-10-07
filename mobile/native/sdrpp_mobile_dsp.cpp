@@ -12,6 +12,7 @@
 #include <dsp/taps/from_array.h>
 #include <dsp/demod/am.h>
 #include <dsp/demod/fm.h>
+#include <dsp/demod/broadcast_fm.h>
 #include <dsp/demod/ssb.h>
 #include <dsp/demod/cw.h>
 #include <dsp/filter/deephasis.h>
@@ -61,14 +62,17 @@ public:
         if (nfm) {
             nfm->reset();
         }
-        if (wfm) {
-            wfm->reset();
+        if (wfmBroadcast) {
+            wfmBroadcast->reset();
         }
         if (audioResampler) {
             audioResampler->reset();
         }
-        if (deemphasis) {
-            deemphasis->reset();
+        if (stereoAudioResampler) {
+            stereoAudioResampler->reset();
+        }
+        if (stereoDeemphasis) {
+            stereoDeemphasis->reset();
         }
 
         // SSB/CW blocks do not expose a complete public reset method. Rebuild
@@ -120,6 +124,64 @@ public:
             powerSquelch->process(ifCount, ifBuffer.data(), ifBuffer.data());
         }
 
+        if (mode == SDRPP_MODE_WFM && wfmBroadcast) {
+            ensureStereoCapacity(static_cast<size_t>(ifCount) + 4096);
+            int rdsCount = 0;
+            int stereoCount = wfmBroadcast->process(
+                ifCount,
+                ifBuffer.data(),
+                stereoDemodBuffer.data(),
+                rdsCount,
+                nullptr);
+            if (stereoCount <= 0) {
+                return 0;
+            }
+
+            const dsp::stereo_t* stereoData = stereoDemodBuffer.data();
+            int audioFrames = stereoCount;
+
+            if (stereoAudioResampler) {
+                const size_t expectedAudio = static_cast<size_t>(
+                    std::ceil(
+                        (static_cast<double>(stereoCount) * kOutputSampleRate) /
+                        ifSampleRate)) + 4096;
+                ensureStereoAudioCapacity(expectedAudio);
+                audioFrames = stereoAudioResampler->process(
+                    stereoCount,
+                    stereoDemodBuffer.data(),
+                    stereoAudioBuffer.data());
+                stereoData = stereoAudioBuffer.data();
+            }
+
+            if (audioFrames <= 0) {
+                return 0;
+            }
+
+            if (stereoDeemphasis) {
+                stereoDeemphasis->process(
+                    audioFrames,
+                    stereoData,
+                    stereoAudioBuffer2.data());
+                stereoData = stereoAudioBuffer2.data();
+            }
+
+            const size_t frameCapacity = outCapacity / 2;
+            const size_t writeFrames = std::min<size_t>(
+                static_cast<size_t>(audioFrames),
+                frameCapacity);
+            for (size_t i = 0; i < writeFrames; ++i) {
+                const float left =
+                    std::clamp(stereoData[i].l, -1.0f, 1.0f);
+                const float right =
+                    std::clamp(stereoData[i].r, -1.0f, 1.0f);
+                outPcm[i * 2] =
+                    static_cast<int16_t>(std::lrint(left * 30000.0f));
+                outPcm[i * 2 + 1] =
+                    static_cast<int16_t>(std::lrint(right * 30000.0f));
+            }
+            return writeFrames * 2;
+        }
+
         ensureDemodCapacity(static_cast<size_t>(ifCount) + 4096);
         int demodCount = demodulate(ifCount);
         if (demodCount <= 0) {
@@ -145,22 +207,20 @@ public:
             return 0;
         }
 
-        if (deemphasis) {
-            // De-emphasis is part of SDR++'s normal WFM AF chain.
-            deemphasis->process(audioCount, audioData, audioBuffer2.data());
-            audioData = audioBuffer2.data();
-        }
-
-        const size_t writeCount = std::min<size_t>(
+        const size_t frameCapacity = outCapacity / 2;
+        const size_t writeFrames = std::min<size_t>(
             static_cast<size_t>(audioCount),
-            outCapacity);
+            frameCapacity);
 
-        for (size_t i = 0; i < writeCount; ++i) {
+        for (size_t i = 0; i < writeFrames; ++i) {
             const float sample = std::clamp(audioData[i], -1.0f, 1.0f);
-            outPcm[i] = static_cast<int16_t>(std::lrint(sample * 30000.0f));
+            const int16_t pcm =
+                static_cast<int16_t>(std::lrint(sample * 30000.0f));
+            outPcm[i * 2] = pcm;
+            outPcm[i * 2 + 1] = pcm;
         }
 
-        return writeCount;
+        return writeFrames * 2;
     }
 
     void setSquelch(bool enabled, float levelDb) {
@@ -235,12 +295,13 @@ private:
         ifSampleRate = ifRateForMode(mode);
         bandwidth = clampBandwidth(mode, bandwidth);
 
-        deemphasis.reset();
+        stereoDeemphasis.reset();
+        stereoAudioResampler.reset();
         powerSquelch.reset();
         audioResampler.reset();
         am.reset();
         nfm.reset();
-        wfm.reset();
+        wfmBroadcast.reset();
         ssb.reset();
         cw.reset();
         rfResampler.reset();
@@ -283,11 +344,16 @@ private:
             }
 
             case SDRPP_MODE_WFM: {
-                // Official SDR++ FM detector/filter core. The full stereo/RDS
-                // BroadcastFM wrapper is the next native bridge milestone.
-                wfm = std::make_unique<dsp::demod::FM<float>>();
-                wfm->init(nullptr, ifSampleRate, bandwidth, true);
-                wfm->out.free();
+                wfmBroadcast = std::make_unique<dsp::demod::BroadcastFM>();
+                wfmBroadcast->init(
+                    nullptr,
+                    bandwidth / 2.0,
+                    ifSampleRate,
+                    true,
+                    true,
+                    false);
+                wfmBroadcast->out.free();
+                wfmBroadcast->rdsOut.free();
                 break;
             }
 
@@ -329,17 +395,25 @@ private:
                 break;
         }
 
-        if (ifSampleRate != kOutputSampleRate) {
+        if (mode == SDRPP_MODE_WFM) {
+            stereoAudioResampler = std::make_unique<
+                dsp::multirate::RationalResampler<dsp::stereo_t>>();
+            stereoAudioResampler->init(
+                nullptr,
+                ifSampleRate,
+                kOutputSampleRate);
+            stereoAudioResampler->out.free();
+
+            stereoDeemphasis =
+                std::make_unique<dsp::filter::Deemphasis<dsp::stereo_t>>();
+            stereoDeemphasis->init(nullptr, 50e-6, kOutputSampleRate);
+            stereoDeemphasis->out.free();
+        }
+        else if (ifSampleRate != kOutputSampleRate) {
             audioResampler =
                 std::make_unique<dsp::multirate::RationalResampler<float>>();
             audioResampler->init(nullptr, ifSampleRate, kOutputSampleRate);
             audioResampler->out.free();
-        }
-
-        if (mode == SDRPP_MODE_WFM) {
-            deemphasis = std::make_unique<dsp::filter::Deemphasis<float>>();
-            deemphasis->init(nullptr, 50e-6, kOutputSampleRate);
-            deemphasis->out.free();
         }
 
         // Working buffers. They grow on demand without being recreated for
@@ -348,6 +422,8 @@ private:
         ensureIfCapacity(32768);
         ensureDemodCapacity(32768);
         ensureAudioCapacity(65536);
+        ensureStereoCapacity(32768);
+        ensureStereoAudioCapacity(65536);
     }
 
     int demodulate(int count) {
@@ -357,7 +433,7 @@ private:
             case SDRPP_MODE_NFM:
                 return nfm ? nfm->process(count, ifBuffer.data(), demodBuffer.data()) : 0;
             case SDRPP_MODE_WFM:
-                return wfm ? wfm->process(count, ifBuffer.data(), demodBuffer.data()) : 0;
+                return 0;
             case SDRPP_MODE_USB:
             case SDRPP_MODE_LSB:
             case SDRPP_MODE_DSB:
@@ -397,6 +473,21 @@ private:
         }
     }
 
+    void ensureStereoCapacity(size_t count) {
+        if (stereoDemodBuffer.size() < count) {
+            stereoDemodBuffer.resize(count);
+        }
+    }
+
+    void ensureStereoAudioCapacity(size_t count) {
+        if (stereoAudioBuffer.size() < count) {
+            stereoAudioBuffer.resize(count);
+        }
+        if (stereoAudioBuffer2.size() < count) {
+            stereoAudioBuffer2.resize(count);
+        }
+    }
+
     std::mutex mutex;
     uint32_t inputSampleRate = 1024000;
     double ifSampleRate = 50000.0;
@@ -412,19 +503,26 @@ private:
 
     std::unique_ptr<dsp::demod::AM<float>> am;
     std::unique_ptr<dsp::demod::FM<float>> nfm;
-    std::unique_ptr<dsp::demod::FM<float>> wfm;
+    std::unique_ptr<dsp::demod::BroadcastFM> wfmBroadcast;
     std::unique_ptr<dsp::demod::SSB<float>> ssb;
     std::unique_ptr<dsp::demod::CW<float>> cw;
 
     std::unique_ptr<dsp::multirate::RationalResampler<float>>
         audioResampler;
-    std::unique_ptr<dsp::filter::Deemphasis<float>> deemphasis;
+    std::unique_ptr<
+        dsp::multirate::RationalResampler<dsp::stereo_t>>
+        stereoAudioResampler;
+    std::unique_ptr<dsp::filter::Deemphasis<dsp::stereo_t>>
+        stereoDeemphasis;
 
     std::vector<dsp::complex_t> rfInput;
     std::vector<dsp::complex_t> ifBuffer;
     std::vector<float> demodBuffer;
     std::vector<float> audioBuffer;
     std::vector<float> audioBuffer2;
+    std::vector<dsp::stereo_t> stereoDemodBuffer;
+    std::vector<dsp::stereo_t> stereoAudioBuffer;
+    std::vector<dsp::stereo_t> stereoAudioBuffer2;
 };
 
 MobileDspEngine* asEngine(sdrpp_engine_t handle) {
@@ -550,7 +648,7 @@ uint32_t sdrpp_dsp_output_sample_rate(void) {
 }
 
 const char* sdrpp_dsp_backend_name(void) {
-    return "SDR++ official DSP core bridge v1";
+    return "SDR++ official DSP core bridge v2 · WFM stereo";
 }
 
 } // extern "C"
