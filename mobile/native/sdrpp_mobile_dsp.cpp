@@ -2,12 +2,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <vector>
 
 #include <dsp/types.h>
+#include <dsp/taps/from_array.h>
 #include <dsp/demod/am.h>
 #include <dsp/demod/fm.h>
 #include <dsp/demod/ssb.h>
