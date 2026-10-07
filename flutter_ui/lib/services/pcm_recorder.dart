@@ -82,7 +82,7 @@ class PcmRecorder {
 
     final header = _wavHeader(
       sampleRate: _sampleRateHz,
-      channels: 1,
+      channels: 2,
       bitsPerSample: 16,
       pcmBytes: _pcmBytes,
     );
