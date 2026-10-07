@@ -147,6 +147,47 @@ static inline void volk_32f_s32f_multiply_32f(
     }
 }
 
+static inline void volk_32f_x2_multiply_32f(
+    float* out,
+    const float* a,
+    const float* b,
+    unsigned int count) {
+    for (unsigned int n = 0; n < count; ++n) {
+        out[n] = a[n] * b[n];
+    }
+}
+
+static inline void volk_32fc_x2_multiply_32fc(
+    lv_32fc_t* out,
+    const lv_32fc_t* a,
+    const lv_32fc_t* b,
+    unsigned int count) {
+    for (unsigned int n = 0; n < count; ++n) {
+        out[n].r = a[n].r * b[n].r - a[n].i * b[n].i;
+        out[n].i = a[n].r * b[n].i + a[n].i * b[n].r;
+    }
+}
+
+static inline void volk_32f_x2_add_32f(
+    float* out,
+    const float* a,
+    const float* b,
+    unsigned int count) {
+    for (unsigned int n = 0; n < count; ++n) {
+        out[n] = a[n] + b[n];
+    }
+}
+
+static inline void volk_32f_x2_subtract_32f(
+    float* out,
+    const float* a,
+    const float* b,
+    unsigned int count) {
+    for (unsigned int n = 0; n < count; ++n) {
+        out[n] = a[n] - b[n];
+    }
+}
+
 static inline void volk_32fc_s32fc_x2_rotator2_32fc(
     lv_32fc_t* out,
     const lv_32fc_t* input,
