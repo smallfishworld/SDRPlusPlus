@@ -916,7 +916,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '${(_frequencyHz / 1000000).toStringAsFixed(6)} MHz · $_mode · 48 kHz WAV',
+                    '${(_frequencyHz / 1000000).toStringAsFixed(6)} MHz · $_mode · 48 kHz stereo WAV',
                     style: const TextStyle(color: Color(0xFF8193A7)),
                   ),
                   const SizedBox(height: 20),
@@ -973,7 +973,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
             child: Padding(
               padding: EdgeInsets.all(16),
               child: Text(
-                'Recording captures the demodulated 48 kHz mono PCM stream produced by the active SDR++ DSP backend. Frequency and demodulation mode are included in the filename.',
+                'Recording captures the demodulated 48 kHz stereo PCM stream produced by the active SDR++ DSP backend. Frequency and demodulation mode are included in the filename.',
                 style: TextStyle(
                   color: Color(0xFF8193A7),
                   height: 1.45,
