@@ -92,3 +92,29 @@ for folder, px in sizes.items():
     img.resize((px, px), Image.Resampling.LANCZOS).save(dest / "ic_launcher.png")
 
 print(f"Generated branding: {master}")
+
+
+# Dark launch background for Android startup.
+drawable_xml = """<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="#080B10" />
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@mipmap/ic_launcher" />
+    </item>
+</layer-list>
+"""
+for folder in ("drawable", "drawable-v21"):
+    dest = android_res / folder
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "launch_background.xml").write_text(drawable_xml)
+
+values = android_res / "values"
+values.mkdir(parents=True, exist_ok=True)
+colors_path = values / "colors.xml"
+colors_path.write_text("""<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="sdrpp_splash_background">#080B10</color>
+</resources>
+""")
