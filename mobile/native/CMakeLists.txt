@@ -1,0 +1,32 @@
+cmake_minimum_required(VERSION 3.18)
+
+project(sdrpp_mobile_native LANGUAGES CXX)
+
+add_library(sdrpp_mobile SHARED
+    sdrpp_mobile_dsp.cpp
+)
+
+target_compile_features(sdrpp_mobile PRIVATE cxx_std_17)
+
+# The compatibility include must come before SDR++ core/src so <volk/volk.h>
+# resolves to the portable bridge shim. The actual DSP implementation is
+# directly compiled from SDR++'s official header-only DSP blocks.
+target_include_directories(sdrpp_mobile PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/compat
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../core/src
+)
+
+if(MSVC)
+    target_compile_options(sdrpp_mobile PRIVATE /O2 /EHsc)
+else()
+    target_compile_options(sdrpp_mobile PRIVATE -O3 -fvisibility=hidden)
+endif()
+
+if(ANDROID)
+    target_link_libraries(sdrpp_mobile PRIVATE log)
+endif()
+
+set_target_properties(sdrpp_mobile PROPERTIES
+    OUTPUT_NAME "sdrpp_mobile"
+)
