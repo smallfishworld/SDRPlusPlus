@@ -52,6 +52,11 @@ SDRPP_MOBILE_API int sdrpp_dsp_set_bandwidth(
     sdrpp_engine_t engine,
     float bandwidth_hz);
 
+SDRPP_MOBILE_API int sdrpp_dsp_set_squelch(
+    sdrpp_engine_t engine,
+    int enabled,
+    float level_db);
+
 /*
  * Clear resampler/demodulator/AGC history after retuning so old-channel state
  * and buffered audio cannot mute or contaminate the new frequency.
