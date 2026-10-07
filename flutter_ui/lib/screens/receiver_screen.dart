@@ -455,60 +455,68 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         ? '${(_sampleRateHz / 1000000).toStringAsFixed(3)} MSPS'
         : 'No RF stream';
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onHorizontalDragStart: (_) => _dragAccumulatorPx = 0,
-        onHorizontalDragUpdate: (details) =>
-            _handleSpectrumDrag(details.primaryDelta ?? 0),
-        onHorizontalDragEnd: (_) => _dragAccumulatorPx = 0,
-        onDoubleTap: _showFrequencyPad,
-        child: Stack(
-          children: <Widget>[
-            Positioned.fill(
-              child: Column(
-                children: <Widget>[
-                  Expanded(
-                    flex: 43,
-                    child: CustomPaint(
-                      painter: SpectrumPainter(
-                        spectrum: _spectrum,
-                        centerFrequencyHz: _frequencyHz,
-                        sampleRateHz: _sampleRateHz,
+    return LayoutBuilder(
+      builder: (context, constraints) => Card(
+        clipBehavior: Clip.antiAlias,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (details) => _handleSpectrumTap(
+            details.localPosition.dx,
+            constraints.maxWidth,
+          ),
+          onHorizontalDragStart: (_) => _dragAccumulatorPx = 0,
+          onHorizontalDragUpdate: (details) =>
+              _handleSpectrumDrag(details.primaryDelta ?? 0),
+          onHorizontalDragEnd: (_) => _dragAccumulatorPx = 0,
+          onDoubleTap: _showFrequencyPad,
+          child: Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: Column(
+                  children: <Widget>[
+                    Expanded(
+                      flex: 43,
+                      child: CustomPaint(
+                        painter: SpectrumPainter(
+                          spectrum: _spectrum,
+                          centerFrequencyHz: _frequencyHz,
+                          sampleRateHz: _sampleRateHz,
+                        ),
+                        child: const SizedBox.expand(),
                       ),
-                      child: const SizedBox.expand(),
                     ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFF1B2835)),
-                  Expanded(
-                    flex: 57,
-                    child: CustomPaint(
-                      painter: WaterfallPainter(
-                        history: _waterfall,
+                    const Divider(height: 1, color: Color(0xFF1B2835)),
+                    Expanded(
+                      flex: 57,
+                      child: CustomPaint(
+                        painter: WaterfallPainter(
+                          history: _waterfall,
+                        ),
+                        child: const SizedBox.expand(),
                       ),
-                      child: const SizedBox.expand(),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            Positioned(
-              left: 12,
-              top: 10,
-              child: _tinyBadge(streamLabel),
-            ),
-            Positioned(
-              right: 12,
-              top: 10,
-              child: _tinyBadge(_mode),
-            ),
-            Positioned(
-              left: 12,
-              bottom: 10,
-              child: _tinyBadge('Drag to tune · step ${_formatStep(_tuningStepHz)}'),
-            ),
-          ],
+              Positioned(
+                left: 12,
+                top: 10,
+                child: _tinyBadge(streamLabel),
+              ),
+              Positioned(
+                right: 12,
+                top: 10,
+                child: _tinyBadge(_mode),
+              ),
+              Positioned(
+                left: 12,
+                bottom: 10,
+                child: _tinyBadge(
+                  'Tap/drag to tune · step ${_formatStep(_tuningStepHz)}',
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1484,6 +1492,20 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       await _audio.start();
       _audio.setVolume(_volume);
     });
+  }
+
+  void _handleSpectrumTap(double x, double width) {
+    if (width <= 1) {
+      return;
+    }
+
+    final normalized = (x / width).clamp(0.0, 1.0);
+    final offsetHz =
+        ((normalized - 0.5) * _sampleRateHz).round();
+    final target = _frequencyHz + offsetHz;
+    final snapped =
+        (target / _tuningStepHz).round() * _tuningStepHz;
+    _tuneFrequency(snapped);
   }
 
   void _handleSpectrumDrag(double deltaPx) {
