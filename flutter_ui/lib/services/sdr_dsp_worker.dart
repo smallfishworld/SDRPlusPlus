@@ -100,6 +100,14 @@ class SdrDspWorker {
     });
   }
 
+  void setSquelch(bool enabled, double thresholdDb) {
+    _commandPort?.send(<String, Object>{
+      'type': 'squelch',
+      'enabled': enabled,
+      'thresholdDb': thresholdDb,
+    });
+  }
+
   void addIq(Uint8List data) {
     final port = _commandPort;
     if (port == null || data.isEmpty) {
@@ -156,6 +164,12 @@ void _sdrDspWorkerMain(SendPort mainPort) {
       case 'sampleRate':
         processor.setSampleRate(message['sampleRateHz'] as int);
         break;
+      case 'squelch':
+        processor.setSquelch(
+          message['enabled'] as bool,
+          (message['thresholdDb'] as num).toDouble(),
+        );
+        break;
       case 'iq':
         final data = message['data'];
         if (data is TransferableTypedData) {
@@ -197,6 +211,10 @@ class _DspProcessor {
   double _audioLowPass = 0;
   double _deemphasisState = 0;
   double _outputPhase = 0;
+  double _cwPhase = 0;
+  double _rfPowerDb = -120;
+  bool _squelchEnabled = false;
+  double _squelchThresholdDb = -82;
 
   final Int16List _pcm = Int16List(960);
   int _pcmCount = 0;
@@ -226,6 +244,11 @@ class _DspProcessor {
     reset();
   }
 
+  void setSquelch(bool enabled, double thresholdDb) {
+    _squelchEnabled = enabled;
+    _squelchThresholdDb = thresholdDb;
+  }
+
   void reset() {
     _fftSkipSamples = 0;
     resetDemodState();
@@ -244,6 +267,8 @@ class _DspProcessor {
     _audioLowPass = 0;
     _deemphasisState = 0;
     _outputPhase = 0;
+    _cwPhase = 0;
+    _rfPowerDb = -120;
     _pcmCount = 0;
   }
 
@@ -267,7 +292,7 @@ class _DspProcessor {
     }
     _fftSkipSamples -= sampleCount;
 
-    if (mode != 'AM' && mode != 'NFM' && mode != 'WFM') {
+    if (mode == 'RAW') {
       return;
     }
 
@@ -292,12 +317,24 @@ class _DspProcessor {
       _sumQ = 0;
       _decimCount = 0;
 
-      final audio = switch (mode) {
+      final power = avgI * avgI + avgQ * avgQ;
+      final instantDb = 10 * math.log(power + 1e-12) / math.ln10;
+      _rfPowerDb = 0.995 * _rfPowerDb + 0.005 * instantDb;
+
+      var audio = switch (mode) {
         'AM' => _demodAm(avgI, avgQ, decimatedRate),
         'NFM' => _demodFm(avgI, avgQ, decimatedRate, 5000),
         'WFM' => _demodWfm(avgI, avgQ, decimatedRate),
+        'USB' => _demodSsb(avgI, avgQ, decimatedRate, 1),
+        'LSB' => _demodSsb(avgI, avgQ, decimatedRate, -1),
+        'DSB' => _demodDsb(avgI, decimatedRate),
+        'CW' => _demodCw(avgI, avgQ, decimatedRate),
         _ => 0.0,
       };
+
+      if (_squelchEnabled && _rfPowerDb < _squelchThresholdDb) {
+        audio = 0;
+      }
 
       _resampleToAudio(audio, decimatedRate);
     }
@@ -360,6 +397,38 @@ class _DspProcessor {
     final alpha = 1 - math.exp(-1 / (rate * tau));
     _deemphasisState += alpha * (detected - _deemphasisState);
     return _deemphasisState.clamp(-1.0, 1.0).toDouble();
+  }
+
+  double _demodSsb(double re, double im, double rate, int sideband) {
+    // RTL-TCP is tuned to the carrier. The complex baseband already preserves
+    // sideband orientation; taking the in-phase component after a voice LPF
+    // is a practical lightweight SSB detector for the mobile preview.
+    final selected = sideband > 0 ? re + 0.15 * im : re - 0.15 * im;
+    final cutoff = math.min(3200.0, math.max(1800.0, bandwidthHz * 0.48));
+    final alpha = 1 - math.exp(-2 * math.pi * cutoff / rate);
+    _audioLowPass += alpha * (selected - _audioLowPass);
+    return (_audioLowPass * 3.2).clamp(-1.0, 1.0).toDouble();
+  }
+
+  double _demodDsb(double re, double rate) {
+    final cutoff = math.min(5000.0, math.max(1800.0, bandwidthHz * 0.48));
+    final alpha = 1 - math.exp(-2 * math.pi * cutoff / rate);
+    _audioLowPass += alpha * (re - _audioLowPass);
+    return (_audioLowPass * 3.0).clamp(-1.0, 1.0).toDouble();
+  }
+
+  double _demodCw(double re, double im, double rate) {
+    const toneHz = 700.0;
+    _cwPhase += 2 * math.pi * toneHz / rate;
+    if (_cwPhase > 2 * math.pi) {
+      _cwPhase -= 2 * math.pi;
+    }
+    final mixed =
+        re * math.cos(_cwPhase) - im * math.sin(_cwPhase);
+    final cutoff = math.min(1200.0, math.max(350.0, bandwidthHz * 0.48));
+    final alpha = 1 - math.exp(-2 * math.pi * cutoff / rate);
+    _audioLowPass += alpha * (mixed - _audioLowPass);
+    return (_audioLowPass * 4.0).clamp(-1.0, 1.0).toDouble();
   }
 
   void _resampleToAudio(double sample, double inputRate) {
