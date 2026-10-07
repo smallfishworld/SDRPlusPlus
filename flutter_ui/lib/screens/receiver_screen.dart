@@ -316,8 +316,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             const Text(
-              'SDR++',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+              'SDR++ Receiver',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
             ),
             Text(
               title,
