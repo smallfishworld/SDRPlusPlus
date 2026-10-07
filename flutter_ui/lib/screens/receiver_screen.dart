@@ -33,7 +33,17 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   String _mode = 'AM';
   double _bandwidthKhz = 10;
   bool _tunerAgc = true;
+  bool _rtlAgc = false;
+  bool _biasTee = false;
+  bool _offsetTuning = false;
+  int _directSampling = 0;
+  int _ppm = 0;
+  double _manualGainDb = 0;
+  bool _squelchEnabled = false;
+  double _squelchDb = -82;
   double _volume = 0.72;
+  int _tuningStepHz = 25000;
+  double _dragAccumulatorPx = 0;
   bool _scanning = false;
   int _scanFrequencyHz = 118000000;
   RtlTcpConnectionState _connectionState =
@@ -50,16 +60,51 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     'WFM',
     'USB',
     'LSB',
+    'DSB',
+    'CW',
+    'RAW',
+  ];
+
+  static const List<int> _tuningSteps = <int>[
+    100,
+    500,
+    1000,
+    5000,
+    8330,
+    10000,
+    12500,
+    25000,
+    100000,
   ];
 
   static const List<_Preset> _presets = <_Preset>[
-    _Preset('Hangzhou ATIS', 127250000, 'AM', 10000, 'ATIS'),
-    _Preset('Hangzhou Tower', 118300000, 'AM', 10000, 'Tower'),
-    _Preset('Hangzhou Tower 2', 123650000, 'AM', 10000, 'Tower'),
-    _Preset('Hangzhou Ground', 121650000, 'AM', 10000, 'Ground'),
-    _Preset('Hangzhou Delivery', 121950000, 'AM', 10000, 'Delivery'),
-    _Preset('Hangzhou Approach', 125550000, 'AM', 10000, 'Approach'),
-    _Preset('Hangzhou Approach 2', 126050000, 'AM', 10000, 'Approach'),
+    // Hangzhou / Xiaoshan airband.
+    _Preset('Hangzhou ATIS', 127250000, 'AM', 10000, 'Airband'),
+    _Preset('Hangzhou Tower', 118300000, 'AM', 10000, 'Airband'),
+    _Preset('Hangzhou Tower 2', 123650000, 'AM', 10000, 'Airband'),
+    _Preset('Hangzhou Ground', 121650000, 'AM', 10000, 'Airband'),
+    _Preset('Hangzhou Delivery', 121950000, 'AM', 10000, 'Airband'),
+    _Preset('Hangzhou Approach', 125550000, 'AM', 10000, 'Airband'),
+    _Preset('Hangzhou Approach 2', 126050000, 'AM', 10000, 'Airband'),
+
+    // Hangzhou / Zhejiang public FM broadcasting.
+    _Preset('浙江之声', 88000000, 'WFM', 180000, 'Hangzhou FM'),
+    _Preset('杭州之声', 89000000, 'WFM', 180000, 'Hangzhou FM'),
+    _Preset('Z907 城市资讯', 90700000, 'WFM', 180000, 'Hangzhou FM'),
+    _Preset('杭州交通 918', 91800000, 'WFM', 180000, 'Hangzhou FM'),
+    _Preset('浙江交通之声', 93000000, 'WFM', 180000, 'Hangzhou FM'),
+    _Preset('浙江经济广播', 95000000, 'WFM', 180000, 'Hangzhou FM'),
+    _Preset('动听 968', 96800000, 'WFM', 180000, 'Hangzhou FM'),
+    _Preset('浙江民生资讯', 99600000, 'WFM', 180000, 'Hangzhou FM'),
+    _Preset('浙江旅游之声', 104500000, 'WFM', 180000, 'Hangzhou FM'),
+    _Preset('西湖之声', 105400000, 'WFM', 180000, 'Hangzhou FM'),
+    _Preset('浙江城市之声', 107000000, 'WFM', 180000, 'Hangzhou FM'),
+
+    // Common amateur-radio receive presets around Hangzhou.
+    _Preset('杭州 2m 常用直频', 145100000, 'NFM', 12500, 'Amateur Radio'),
+    _Preset('UHF 常用直频', 438500000, 'NFM', 12500, 'Amateur Radio'),
+    _Preset('杭州 2m 中继下行（历史）', 145550000, 'NFM', 12500, 'Amateur Radio'),
+    _Preset('杭州 70cm 中继下行（历史）', 439800000, 'NFM', 12500, 'Amateur Radio'),
   ];
 
   @override
