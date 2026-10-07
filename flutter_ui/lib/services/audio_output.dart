@@ -16,7 +16,7 @@ class AudioOutput {
     if (!soloud.isInitialized) {
       await soloud.init(
         sampleRate: 48000,
-        bufferSize: 1024,
+        bufferSize: 2048,
         channels: Channels.stereo,
         lowLatency: true,
       );
@@ -25,9 +25,11 @@ class AudioOutput {
     await stopStream();
 
     final source = soloud.setBufferStream(
-      maxBufferSizeDuration: const Duration(seconds: 3),
+      maxBufferSizeDuration: const Duration(seconds: 8),
       bufferingType: BufferingType.released,
-      bufferingTimeNeeds: 0.10,
+      // A few hundred milliseconds prevents network/DSP jitter from causing
+      // audible stop-start playback while keeping SDR latency reasonable.
+      bufferingTimeNeeds: 0.35,
       sampleRate: 48000,
       channels: Channels.mono,
       format: BufferType.s16le,
