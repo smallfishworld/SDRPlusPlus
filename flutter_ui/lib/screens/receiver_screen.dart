@@ -24,8 +24,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
 
   StreamSubscription<Float32List>? _spectrumSubscription;
   StreamSubscription<Uint8List>? _audioSubscription;
+  StreamSubscription<String>? _backendSubscription;
   StreamSubscription<RtlTcpConnectionState>? _stateSubscription;
   Timer? _scannerTimer;
+  Timer? _retuneAudioTimer;
 
   int _tab = 0;
   String _presetCategory = 'All';
@@ -50,6 +52,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   RtlTcpConnectionState _connectionState =
       RtlTcpConnectionState.disconnected;
   String _connectionError = '';
+  String _dspBackend = 'Detecting DSP backend…';
 
   Float32List _spectrum = Float32List(256);
   final List<Float32List> _waterfall = <Float32List>[];
@@ -123,6 +126,12 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       });
     });
     _audioSubscription = _client.audioStream.listen(_audio.addPcm);
+    _backendSubscription = _client.backendStream.listen((name) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _dspBackend = name);
+    });
     _stateSubscription = _client.stateStream.listen((state) {
       if (!mounted) {
         return;
@@ -137,8 +146,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   @override
   void dispose() {
     _scannerTimer?.cancel();
+    _retuneAudioTimer?.cancel();
     unawaited(_spectrumSubscription?.cancel());
     unawaited(_audioSubscription?.cancel());
+    unawaited(_backendSubscription?.cancel());
     unawaited(_stateSubscription?.cancel());
     unawaited(_client.dispose());
     unawaited(_audio.dispose());
@@ -1032,11 +1043,13 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                 ),
                 const SizedBox(height: 12),
                 Card(
-                  child: const ListTile(
-                    leading: Icon(Icons.memory_rounded),
-                    title: Text('Native SDR engine'),
+                  child: ListTile(
+                    leading: const Icon(Icons.memory_rounded),
+                    title: const Text('DSP backend'),
                     subtitle: Text(
-                      'Live AM/NFM/WFM audio currently runs in an isolated Dart DSP worker with SoLoud output. The stable C ABI remains the path for the optimized native engine.',
+                      _dspBackend == 'Dart fallback DSP'
+                          ? 'Fallback active. Official native SDR++ DSP library was not loaded.'
+                          : '$_dspBackend\nOfficial SDR++ C++ demodulator/resampler path is active.',
                     ),
                   ),
                 ),
@@ -1263,7 +1276,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     await _audio.stopStream();
   }
 
-  void _tuneFrequency(int frequencyHz) {
+  void _tuneFrequency(
+    int frequencyHz, {
+    bool recoverAudio = true,
+  }) {
     final clamped =
         frequencyHz.clamp(100000, 6000000000).toInt();
     setState(() {
@@ -1271,6 +1287,29 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       _scanFrequencyHz = clamped;
     });
     _client.setFrequency(clamped);
+
+    if (recoverAudio) {
+      _scheduleAudioRecovery();
+    }
+  }
+
+  void _scheduleAudioRecovery() {
+    _retuneAudioTimer?.cancel();
+    if (_connectionState != RtlTcpConnectionState.connected) {
+      return;
+    }
+
+    _retuneAudioTimer = Timer(const Duration(milliseconds: 180), () async {
+      if (!mounted ||
+          _connectionState != RtlTcpConnectionState.connected) {
+        return;
+      }
+
+      // Recreate the streaming voice after the tuner/DSP chain has settled.
+      // This clears a SoLoud underrun or stale PCM queue after fast VFO moves.
+      await _audio.start();
+      _audio.setVolume(_volume);
+    });
   }
 
   void _handleSpectrumDrag(double deltaPx) {
@@ -1546,7 +1585,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         next = 118000000;
       }
       _scanFrequencyHz = next;
-      _tuneFrequency(next);
+      _tuneFrequency(next, recoverAudio: false);
     });
   }
 
