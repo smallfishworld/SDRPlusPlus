@@ -902,9 +902,12 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       if (mounted) {
         setState(() => _tab = 0);
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
-        setState(() => _connectionError = _client.lastError);
+        final message = _client.lastError.isNotEmpty
+            ? _client.lastError
+            : error.toString();
+        setState(() => _connectionError = message);
       }
     }
   }
@@ -916,7 +919,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   }
 
   void _tuneFrequency(int frequencyHz) {
-    final clamped = frequencyHz.clamp(100000, 6000000000);
+    final clamped =
+        frequencyHz.clamp(100000, 6000000000).toInt();
     setState(() {
       _frequencyHz = clamped;
       _scanFrequencyHz = clamped;
@@ -1113,7 +1117,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     final sorted = _spectrum.toList()..sort();
     final noise = sorted[sorted.length ~/ 2];
     final peak = sorted.last;
-    return math.max(0, peak - noise);
+    return math.max(0.0, peak - noise).toDouble();
   }
 }
 
@@ -1164,10 +1168,12 @@ class SpectrumPainter extends CustomPainter {
     if (spectrum.isNotEmpty) {
       final path = Path();
       for (var i = 0; i < spectrum.length; i++) {
-        final x = size.width * i / math.max(1, spectrum.length - 1);
-        final normalized =
-            ((spectrum[i] - minDb) / (maxDb - minDb)).clamp(0.0, 1.0);
-        final y = size.height * (1 - normalized);
+        final denominator = math.max(1, spectrum.length - 1).toDouble();
+        final x = size.width * i / denominator;
+        final normalized = ((spectrum[i] - minDb) / (maxDb - minDb))
+            .clamp(0.0, 1.0)
+            .toDouble();
+        final y = size.height * (1.0 - normalized);
         if (i == 0) {
           path.moveTo(x, y);
         } else {
@@ -1286,7 +1292,7 @@ class WaterfallPainter extends CustomPainter {
       return;
     }
 
-    final rows = math.min(history.length, 92);
+    final rows = history.length < 92 ? history.length : 92;
     final rowHeight = size.height / rows;
     final paint = Paint();
 
