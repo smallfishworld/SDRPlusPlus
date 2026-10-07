@@ -79,15 +79,16 @@ namespace {
 
         for (int i = 0; i < 5; i++) {
             if (i != 0) { ImGui::SameLine(); }
-            if (mode == modes[i]) {
+            const bool selected = (mode == modes[i]);
+            if (selected) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
             }
-            if (ImGui::Button(labels[i], modeSize) && mode != modes[i]) {
+            if (ImGui::Button(labels[i], modeSize) && !selected) {
                 int requested = modes[i];
                 core::modComManager.callInterface(radioName, RADIO_IFACE_CMD_SET_MODE, &requested, nullptr);
                 mode = requested;
             }
-            if (mode == modes[i]) { ImGui::PopStyleColor(); }
+            if (selected) { ImGui::PopStyleColor(); }
         }
 
         ImGui::SameLine();
