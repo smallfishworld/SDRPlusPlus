@@ -262,7 +262,8 @@ class _DspProcessor {
           <Uint8List>[spectrum.buffer.asUint8List()],
         ),
       });
-      _fftSkipSamples = math.max(1024, sampleRateHz ~/ 20);
+      _fftSkipSamples =
+          math.max(1024, sampleRateHz ~/ 20).toInt();
     }
     _fftSkipSamples -= sampleCount;
 
@@ -314,7 +315,8 @@ class _DspProcessor {
     _amEnvelope = 0.999 * _amEnvelope + 0.001 * absolute;
     final agc = dcBlocked / math.max(0.03, _amEnvelope * 5.0);
 
-    final cutoff = math.min(6000.0, math.max(1500.0, bandwidthHz * 0.45));
+    final cutoff =
+        math.min(6000.0, math.max(1500.0, bandwidthHz * 0.45)).toDouble();
     final alpha = 1 - math.exp(-2 * math.pi * cutoff / rate);
     _audioLowPass += alpha * (agc - _audioLowPass);
     return _audioLowPass.clamp(-1.0, 1.0).toDouble();
@@ -344,7 +346,8 @@ class _DspProcessor {
         .clamp(-1.0, 1.0)
         .toDouble();
 
-    final cutoff = math.min(6500.0, math.max(2500.0, bandwidthHz * 0.42));
+    final cutoff =
+        math.min(6500.0, math.max(2500.0, bandwidthHz * 0.42)).toDouble();
     final alpha = 1 - math.exp(-2 * math.pi * cutoff / rate);
     _audioLowPass += alpha * (normalized - _audioLowPass);
     return _audioLowPass;
