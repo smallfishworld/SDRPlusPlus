@@ -47,9 +47,14 @@ jobs:
                   '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
                   '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
                   '    <uses-permission android:name="android.permission.INTERNET" />')
-          s = s.replace('android:label="sdrpp_flutter"', 'android:label="SDR++ Native"')
+          s = s.replace('android:label="sdrpp_flutter"', 'android:label="SDR++ Receiver"')
           p.write_text(s)
           PY
+
+      - name: Generate SDR++ Receiver branding
+        run: |
+          python3 -m pip install --disable-pip-version-check --quiet pillow
+          python3 ../tooling/generate_branding.py
 
       - name: Get Flutter dependencies
         run: flutter pub get
@@ -72,7 +77,11 @@ jobs:
       - name: Build Android APK
         run: flutter build apk --release --target-platform android-arm64
 
+      - name: Name release APK
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk              build/app/outputs/flutter-apk/SDRPP-Receiver-v0.2.0-native.apk
+
       - uses: actions/upload-artifact@v4
         with:
-          name: sdrpp-flutter-native-android
-          path: flutter_ui/build/app/outputs/flutter-apk/app-release.apk
+          name: SDRPP-Receiver-Android
+          path: flutter_ui/build/app/outputs/flutter-apk/SDRPP-Receiver-v0.2.0-native.apk
