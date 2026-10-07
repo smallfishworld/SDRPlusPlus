@@ -9,6 +9,7 @@ class PcmRecorder {
   String? _path;
   int _pcmBytes = 0;
   DateTime? _startedAt;
+  Future<void> _writeTail = Future<void>.value();
 
   bool get isRecording => _file != null;
   String? get path => _path;
@@ -43,6 +44,7 @@ class PcmRecorder {
     _file = file;
     _path = path;
     _pcmBytes = 0;
+    _writeTail = Future<void>.value();
     _startedAt = DateTime.now();
     _sampleRateHz = sampleRateHz;
     return path;
@@ -50,13 +52,23 @@ class PcmRecorder {
 
   int _sampleRateHz = 48000;
 
-  Future<void> addPcm(Uint8List pcm) async {
+  Future<void> addPcm(Uint8List pcm) {
     final file = _file;
     if (file == null || pcm.isEmpty) {
-      return;
+      return Future<void>.value();
     }
-    await file.writeFrom(pcm);
-    _pcmBytes += pcm.length;
+
+    // Audio callbacks can arrive faster than async file writes complete.
+    // Serialize them so WAV chunks never overlap or reorder.
+    final owned = Uint8List.fromList(pcm);
+    _writeTail = _writeTail.then((_) async {
+      if (_file != file) {
+        return;
+      }
+      await file.writeFrom(owned);
+      _pcmBytes += owned.length;
+    });
+    return _writeTail;
   }
 
   Future<String?> stop() async {
@@ -65,6 +77,8 @@ class PcmRecorder {
     if (file == null) {
       return path;
     }
+
+    await _writeTail;
 
     final header = _wavHeader(
       sampleRate: _sampleRateHz,
