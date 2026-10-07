@@ -229,7 +229,9 @@ int sdrpp_main(int argc, char* argv[]) {
     // Themes
     defConfig["theme"] = "Dark";
 #ifdef __ANDROID__
-    defConfig["uiScale"] = 3.0f;
+    // The desktop-oriented 300% scale makes the top bar overflow on phones.
+    // Mobile layout uses larger touch targets explicitly, so 200% is a better baseline.
+    defConfig["uiScale"] = 2.0f;
 #else
     defConfig["uiScale"] = 1.0f;
 #endif
@@ -245,7 +247,12 @@ int sdrpp_main(int argc, char* argv[]) {
 
     defConfig["selectedOffset"] = "None";
     defConfig["manualOffset"] = 0.0;
+#ifdef __ANDROID__
+    // Keep spectrum/waterfall front and center on phones. The menu remains one tap away.
+    defConfig["showMenu"] = false;
+#else
     defConfig["showMenu"] = true;
+#endif
     defConfig["showWaterfall"] = true;
     defConfig["source"] = "";
     defConfig["decimation"] = 1;
