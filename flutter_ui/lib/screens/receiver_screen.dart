@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../services/audio_output.dart';
+import '../services/pcm_recorder.dart';
 import '../services/rtl_tcp_client.dart';
 
 class ReceiverScreen extends StatefulWidget {
@@ -17,6 +18,7 @@ class ReceiverScreen extends StatefulWidget {
 class _ReceiverScreenState extends State<ReceiverScreen> {
   final RtlTcpClient _client = RtlTcpClient();
   final AudioOutput _audio = AudioOutput();
+  final PcmRecorder _recorder = PcmRecorder();
   final TextEditingController _hostController =
       TextEditingController(text: '192.168.2.110');
   final TextEditingController _portController =
@@ -28,6 +30,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   StreamSubscription<RtlTcpConnectionState>? _stateSubscription;
   Timer? _scannerTimer;
   Timer? _retuneAudioTimer;
+  Timer? _recordUiTimer;
+  String? _lastRecordingPath;
 
   int _tab = 0;
   String _presetCategory = 'All';
@@ -125,7 +129,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         }
       });
     });
-    _audioSubscription = _client.audioStream.listen(_audio.addPcm);
+    _audioSubscription = _client.audioStream.listen((pcm) {
+      _audio.addPcm(pcm);
+      unawaited(_recorder.addPcm(pcm));
+    });
     _backendSubscription = _client.backendStream.listen((name) {
       if (!mounted) {
         return;
@@ -147,12 +154,14 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   void dispose() {
     _scannerTimer?.cancel();
     _retuneAudioTimer?.cancel();
+    _recordUiTimer?.cancel();
     unawaited(_spectrumSubscription?.cancel());
     unawaited(_audioSubscription?.cancel());
     unawaited(_backendSubscription?.cancel());
     unawaited(_stateSubscription?.cancel());
     unawaited(_client.dispose());
     unawaited(_audio.dispose());
+    unawaited(_recorder.dispose());
     _hostController.dispose();
     _portController.dispose();
     super.dispose();
@@ -198,6 +207,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       case 2:
         return _scannerPage();
       case 3:
+        return _recordPage();
+      case 4:
         return _settingsPage();
       default:
         return _receiverPage();
@@ -226,6 +237,11 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
           label: Text('Scanner'),
         ),
         NavigationRailDestination(
+          icon: Icon(Icons.fiber_manual_record_outlined),
+          selectedIcon: Icon(Icons.fiber_manual_record_rounded),
+          label: Text('Record'),
+        ),
+        NavigationRailDestination(
           icon: Icon(Icons.tune_rounded),
           label: Text('Settings'),
         ),
@@ -250,6 +266,11 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         NavigationDestination(
           icon: Icon(Icons.radar_rounded),
           label: 'Scanner',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.fiber_manual_record_outlined),
+          selectedIcon: Icon(Icons.fiber_manual_record_rounded),
+          label: 'Record',
         ),
         NavigationDestination(
           icon: Icon(Icons.tune_rounded),
@@ -328,7 +349,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
             : 'Offline';
 
     return InkWell(
-      onTap: () => setState(() => _tab = 3),
+      onTap: () => setState(() => _tab = 4),
       borderRadius: BorderRadius.circular(99),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -841,6 +862,159 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         ],
       ),
     );
+  }
+
+  Widget _recordPage() {
+    final connected = _connectionState == RtlTcpConnectionState.connected;
+    final recording = _recorder.isRecording;
+    final elapsed = _recorder.elapsed;
+    final mm = elapsed.inMinutes.toString().padLeft(2, '0');
+    final ss = (elapsed.inSeconds % 60).toString().padLeft(2, '0');
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _appHeader('Recorder'),
+          const SizedBox(height: 18),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: <Widget>[
+                  Container(
+                    width: 84,
+                    height: 84,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: recording
+                          ? const Color(0x33FF4D6D)
+                          : const Color(0xFF121C27),
+                      border: Border.all(
+                        color: recording
+                            ? const Color(0xFFFF4D6D)
+                            : const Color(0xFF2A3A49),
+                        width: 2,
+                      ),
+                    ),
+                    child: Icon(
+                      recording
+                          ? Icons.stop_rounded
+                          : Icons.mic_none_rounded,
+                      size: 38,
+                      color: recording
+                          ? const Color(0xFFFF7388)
+                          : const Color(0xFF8FA2B6),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    recording ? '$mm:$ss' : 'Ready to record',
+                    style: const TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${(_frequencyHz / 1000000).toStringAsFixed(6)} MHz · $_mode · 48 kHz WAV',
+                    style: const TextStyle(color: Color(0xFF8193A7)),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: !connected && !recording
+                          ? null
+                          : recording
+                              ? _stopRecording
+                              : _startRecording,
+                      style: recording
+                          ? FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFFF4D6D),
+                              foregroundColor: Colors.white,
+                            )
+                          : null,
+                      icon: Icon(
+                        recording
+                            ? Icons.stop_rounded
+                            : Icons.fiber_manual_record_rounded,
+                      ),
+                      label: Text(
+                        recording ? 'Stop recording' : 'Start recording',
+                      ),
+                    ),
+                  ),
+                  if (!connected && !recording) ...<Widget>[
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Connect a receiver before recording.',
+                      style: TextStyle(color: Color(0xFF6E8094)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.folder_outlined),
+              title: const Text('Last recording'),
+              subtitle: Text(
+                _lastRecordingPath ??
+                    'WAV recordings are stored in the app documents folder.',
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Recording captures the demodulated 48 kHz mono PCM stream produced by the active SDR++ DSP backend. Frequency and demodulation mode are included in the filename.',
+                style: TextStyle(
+                  color: Color(0xFF8193A7),
+                  height: 1.45,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _startRecording() async {
+    final path = await _recorder.start(
+      frequencyHz: _frequencyHz,
+      mode: _mode,
+    );
+    _lastRecordingPath = path;
+    _recordUiTimer?.cancel();
+    _recordUiTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) {
+        if (mounted) {
+          setState(() {});
+        }
+      },
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    _recordUiTimer?.cancel();
+    _recordUiTimer = null;
+    final path = await _recorder.stop();
+    if (mounted) {
+      setState(() => _lastRecordingPath = path);
+    }
   }
 
   Widget _settingsPage() {
@@ -1550,7 +1724,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       return;
     }
     if (_connectionState != RtlTcpConnectionState.connected) {
-      setState(() => _tab = 3);
+      setState(() => _tab = 4);
       return;
     }
 
