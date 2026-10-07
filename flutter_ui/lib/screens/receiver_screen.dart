@@ -300,17 +300,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   Widget _appHeader(String title) {
     return Row(
       children: <Widget>[
-        Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            gradient: const LinearGradient(
-              colors: <Color>[Color(0xFF67E8F9), Color(0xFF8B5CF6)],
-            ),
-          ),
-          child: const Icon(Icons.waves_rounded, color: Color(0xFF051014)),
-        ),
+        const _BrandMark(size: 38),
         const SizedBox(width: 10),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1804,6 +1794,88 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     final peak = sorted.last;
     return math.max(0.0, peak - noise).toDouble();
   }
+}
+
+class _BrandMark extends StatelessWidget {
+  const _BrandMark({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size.square(size),
+      painter: _BrandMarkPainter(),
+    );
+  }
+}
+
+class _BrandMarkPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final radius = Radius.circular(size.width * 0.28);
+
+    final background = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: <Color>[
+          Color(0xFF0B1724),
+          Color(0xFF0A1020),
+        ],
+      ).createShader(rect);
+    canvas.drawRRect(RRect.fromRectAndRadius(rect, radius), background);
+
+    final border = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * 0.055
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: <Color>[
+          Color(0xFF24D6FF),
+          Color(0xFF8B5CF6),
+          Color(0xFFC56BFF),
+        ],
+      ).createShader(rect);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        rect.deflate(size.width * 0.04),
+        Radius.circular(size.width * 0.25),
+      ),
+      border,
+    );
+
+    const heights = <double>[0.32, 0.52, 0.72, 1.0, 0.8, 0.58, 0.36];
+    final barWidth = size.width * 0.065;
+    final gap = size.width * 0.055;
+    final total = heights.length * barWidth + (heights.length - 1) * gap;
+    var x = (size.width - total) / 2;
+
+    for (var i = 0; i < heights.length; i++) {
+      final h = size.height * 0.54 * heights[i];
+      final t = i / (heights.length - 1);
+      final color = Color.lerp(
+        const Color(0xFF27D7FF),
+        const Color(0xFFB05CFF),
+        t,
+      )!;
+      final bar = RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(x + barWidth / 2, size.height / 2),
+          width: barWidth,
+          height: h,
+        ),
+        Radius.circular(barWidth / 2),
+      );
+      canvas.drawRRect(bar, Paint()..color = color);
+      x += barWidth + gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _BrandMarkPainter oldDelegate) => false;
 }
 
 class _Preset {
