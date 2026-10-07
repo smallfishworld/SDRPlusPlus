@@ -9,6 +9,10 @@ on:
       - master
   workflow_dispatch:
 
+concurrency:
+  group: flutter-cross-platform-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     runs-on: ubuntu-latest
