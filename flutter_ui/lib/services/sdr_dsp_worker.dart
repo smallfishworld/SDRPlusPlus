@@ -3,6 +3,8 @@ import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'native_dsp_bridge.dart';
+
 class SdrDspWorker {
   Isolate? _isolate;
   ReceivePort? _receivePort;
@@ -13,9 +15,12 @@ class SdrDspWorker {
       StreamController<Float32List>.broadcast();
   final StreamController<Uint8List> _audioController =
       StreamController<Uint8List>.broadcast();
+  final StreamController<String> _backendController =
+      StreamController<String>.broadcast();
 
   Stream<Float32List> get spectrumStream => _spectrumController.stream;
   Stream<Uint8List> get audioStream => _audioController.stream;
+  Stream<String> get backendStream => _backendController.stream;
 
   Future<void> start() async {
     if (_commandPort != null) {
@@ -39,6 +44,14 @@ class SdrDspWorker {
       }
 
       final type = message['type'];
+      if (type == 'backend') {
+        final name = message['name'];
+        if (name is String && !_backendController.isClosed) {
+          _backendController.add(name);
+        }
+        return;
+      }
+
       final payload = message['data'];
       if (payload is! TransferableTypedData) {
         return;
@@ -134,6 +147,7 @@ class SdrDspWorker {
     _receivePort = null;
     await _spectrumController.close();
     await _audioController.close();
+    await _backendController.close();
   }
 }
 
@@ -180,6 +194,7 @@ void _sdrDspWorkerMain(SendPort mainPort) {
         processor.reset();
         break;
       case 'stop':
+        processor.dispose();
         commandPort.close();
         break;
     }
@@ -187,9 +202,20 @@ void _sdrDspWorkerMain(SendPort mainPort) {
 }
 
 class _DspProcessor {
-  _DspProcessor(this.mainPort);
+  _DspProcessor(this.mainPort) {
+    _native = NativeDspBridge.tryCreate(
+      sampleRateHz: sampleRateHz,
+      mode: mode,
+      bandwidthHz: bandwidthHz,
+    );
+    mainPort.send(<String, Object>{
+      'type': 'backend',
+      'name': _native?.backendName ?? 'Dart fallback DSP',
+    });
+  }
 
   final SendPort mainPort;
+  NativeDspBridge? _native;
 
   int sampleRateHz = 1024000;
   String mode = 'AM';
@@ -227,30 +253,41 @@ class _DspProcessor {
     this.sampleRateHz = sampleRateHz;
     this.mode = mode;
     this.bandwidthHz = bandwidthHz;
+    final native = _native;
+    if (native != null) {
+      native.setSampleRate(sampleRateHz);
+      native.setMode(mode);
+      native.setBandwidth(bandwidthHz);
+    }
     reset();
   }
 
   void setMode(String value) {
     mode = value;
+    _native?.setMode(value);
     resetDemodState();
   }
 
   void setBandwidth(double value) {
     bandwidthHz = value;
+    _native?.setBandwidth(value);
   }
 
   void setSampleRate(int value) {
     sampleRateHz = value;
+    _native?.setSampleRate(value);
     reset();
   }
 
   void setSquelch(bool enabled, double thresholdDb) {
     _squelchEnabled = enabled;
     _squelchThresholdDb = thresholdDb;
+    _native?.setSquelch(enabled, thresholdDb);
   }
 
   void reset() {
     _fftSkipSamples = 0;
+    _native?.reset();
     resetDemodState();
   }
 
@@ -291,6 +328,18 @@ class _DspProcessor {
           math.max(1024, sampleRateHz ~/ 20).toInt();
     }
     _fftSkipSamples -= sampleCount;
+
+    final native = _native;
+    if (native != null) {
+      final pcm = native.process(bytes);
+      if (pcm.isNotEmpty) {
+        mainPort.send(<String, Object>{
+          'type': 'audio',
+          'data': TransferableTypedData.fromList(<Uint8List>[pcm]),
+        });
+      }
+      return;
+    }
 
     if (mode == 'RAW') {
       return;
@@ -457,6 +506,11 @@ class _DspProcessor {
       });
       _pcmCount = 0;
     }
+  }
+
+  void dispose() {
+    _native?.dispose();
+    _native = null;
   }
 
   Float32List _fft1024(Uint8List iqBytes) {
