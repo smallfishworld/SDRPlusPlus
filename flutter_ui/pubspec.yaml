@@ -1,7 +1,7 @@
 name: sdrpp_flutter
-description: Cross-platform Flutter UI for SDR++.
+description: SDR++ Receiver - modern cross-platform SDR client powered by the official SDR++ DSP core.
 publish_to: "none"
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -11,6 +11,7 @@ dependencies:
     sdk: flutter
   flutter_soloud: ^5.1.6
   ffi: ^2.1.3
+  path_provider: ^2.1.5
 
 dev_dependencies:
   flutter_test:
