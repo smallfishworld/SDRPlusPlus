@@ -48,4 +48,17 @@ if(BUILD_TESTING AND NOT ANDROID)
         NAME sdrpp_mobile_ctcss_smoke
         COMMAND sdrpp_mobile_ctcss_smoke
     )
+
+    add_executable(sdrpp_mobile_fm_ifnr_smoke
+        tests/fm_ifnr_smoke.cpp
+    )
+    target_compile_features(sdrpp_mobile_fm_ifnr_smoke PRIVATE cxx_std_17)
+    target_include_directories(sdrpp_mobile_fm_ifnr_smoke PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(sdrpp_mobile_fm_ifnr_smoke PRIVATE sdrpp_mobile)
+    add_test(
+        NAME sdrpp_mobile_fm_ifnr_smoke
+        COMMAND sdrpp_mobile_fm_ifnr_smoke
+    )
 endif()
