@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'android_usb_service.dart';
 import 'sdr_dsp_worker.dart';
 
 enum RtlTcpConnectionState {
@@ -17,6 +18,7 @@ enum ReceiverSourceKind {
   network,
   sdrppServer,
   spyServer,
+  rtlSdrUsb,
 }
 
 class RtlTcpClient {
@@ -254,6 +256,61 @@ class RtlTcpClient {
     _setState(RtlTcpConnectionState.connected);
   }
 
+  Future<void> connectRtlSdrUsb({
+    required String deviceName,
+    int sampleRateHz = 1024000,
+    int frequencyHz = 127250000,
+    String mode = 'AM',
+    double bandwidthHz = 10000,
+  }) async {
+    await disconnect();
+    await _dsp.start();
+
+    _setState(RtlTcpConnectionState.connecting);
+    _lastError = '';
+    _sourceKind = ReceiverSourceKind.rtlSdrUsb;
+    _filePath = '';
+    _mode = mode;
+    _bandwidthHz = bandwidthHz;
+
+    final opened = await AndroidUsbService.openRtlSdr(deviceName);
+    if (opened == null) {
+      _lastError =
+          'USB permission denied or RTL-SDR could not be opened';
+      _setState(RtlTcpConnectionState.error);
+      throw StateError(_lastError);
+    }
+
+    _dsp.setMode(_mode);
+    _dsp.setBandwidth(_bandwidthHz);
+
+    final result = await _dsp.connectRtlSdrUsbSource(
+      systemFd: opened.fd,
+      sampleRateHz: sampleRateHz,
+      frequencyHz: frequencyHz,
+    );
+
+    if (!result.ok) {
+      await AndroidUsbService.closeRtlSdr();
+      _lastError = result.error;
+      _nativeSourceActive = false;
+      _setState(RtlTcpConnectionState.error);
+      throw StateError(
+        result.error.isEmpty
+            ? 'Could not open RTL-SDR USB'
+            : result.error,
+      );
+    }
+
+    _nativeSourceActive = true;
+    _sampleRateHz = result.sampleRateHz;
+    _frequencyHz = result.centerFrequencyHz;
+    _dsp.setSampleRate(_sampleRateHz);
+    _dsp.setMode(_mode);
+    _dsp.setBandwidth(_bandwidthHz);
+    _setState(RtlTcpConnectionState.connected);
+  }
+
   Future<void> connectSdrppServer({
     required String host,
     required int port,
@@ -361,6 +418,9 @@ class RtlTcpClient {
     _socket = null;
     _iqBuffer = BytesBuilder(copy: false);
     _dsp.reset();
+    if (_sourceKind == ReceiverSourceKind.rtlSdrUsb) {
+      await AndroidUsbService.closeRtlSdr();
+    }
     _setState(RtlTcpConnectionState.disconnected);
   }
 
