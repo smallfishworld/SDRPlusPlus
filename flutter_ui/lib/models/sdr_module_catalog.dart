@@ -91,8 +91,19 @@ class SdrModuleCatalog {
       name: 'Network Source',
       kind: SdrModuleKind.source,
       upstreamPath: 'source_modules/network_source',
-      support: SdrModuleSupport.mapped,
-      description: 'Generic SDR++ network IQ source.',
+      support: SdrModuleSupport.active,
+      description:
+          'Native SDR++ TCP/UDP raw IQ source with selectable sample format.',
+      capabilities: <String>[
+        'TCP client',
+        'UDP',
+        'Int8 IQ',
+        'Int16 IQ',
+        'Int32 IQ',
+        'Float32 IQ',
+        'configurable sample rate',
+        'VFO offset tuning',
+      ],
     ),
     SdrModuleDescriptor(
       id: 'sdrpp_server_source',
