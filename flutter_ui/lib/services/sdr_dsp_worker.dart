@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'native_dsp_bridge.dart';
+import 'native_source_bridge.dart';
 
 class SdrDspWorker {
   Isolate? _isolate;
@@ -23,6 +24,9 @@ class SdrDspWorker {
   final StreamController<({int toneIndex, double toneHz})>
       _ctcssController =
       StreamController<({int toneIndex, double toneHz})>.broadcast();
+  final StreamController<({bool connected, String error})>
+      _sourceStateController =
+      StreamController<({bool connected, String error})>.broadcast();
 
   Stream<Float32List> get spectrumStream => _spectrumController.stream;
   Stream<Uint8List> get audioStream => _audioController.stream;
@@ -31,6 +35,8 @@ class SdrDspWorker {
       _rdsController.stream;
   Stream<({int toneIndex, double toneHz})> get ctcssStream =>
       _ctcssController.stream;
+  Stream<({bool connected, String error})> get sourceStateStream =>
+      _sourceStateController.stream;
 
   Future<void> start() async {
     if (_commandPort != null) {
@@ -58,6 +64,19 @@ class SdrDspWorker {
         final name = message['name'];
         if (name is String && !_backendController.isClosed) {
           _backendController.add(name);
+        }
+        return;
+      }
+
+      if (type == 'sourceState') {
+        final connected = message['connected'];
+        final error = message['error'];
+        if (connected is bool &&
+            error is String &&
+            !_sourceStateController.isClosed) {
+          _sourceStateController.add(
+            (connected: connected, error: error),
+          );
         }
         return;
       }
@@ -234,6 +253,122 @@ class SdrDspWorker {
     });
   }
 
+  Future<({bool ok, String error})> connectRtlTcpSource({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    required int frequencyHz,
+  }) async {
+    await start();
+    final commandPort = _commandPort;
+    if (commandPort == null) {
+      return (ok: false, error: 'DSP worker unavailable');
+    }
+
+    final reply = ReceivePort();
+    commandPort.send(<String, Object>{
+      'type': 'sourceConnect',
+      'host': host,
+      'port': port,
+      'sampleRateHz': sampleRateHz,
+      'frequencyHz': frequencyHz,
+      'reply': reply.sendPort,
+    });
+
+    try {
+      final result = await reply.first.timeout(
+        const Duration(seconds: 8),
+      );
+      if (result is Map<Object?, Object?>) {
+        return (
+          ok: result['ok'] == true,
+          error: result['error'] as String? ?? '',
+        );
+      }
+      return (ok: false, error: 'Invalid native source response');
+    } on TimeoutException {
+      return (ok: false, error: 'RTL-TCP native connection timed out');
+    } finally {
+      reply.close();
+    }
+  }
+
+  void disconnectSource() {
+    _commandPort?.send(<String, Object>{
+      'type': 'sourceDisconnect',
+    });
+  }
+
+  void sourceSetFrequency(int frequencyHz) {
+    _commandPort?.send(<String, Object>{
+      'type': 'sourceFrequency',
+      'frequencyHz': frequencyHz,
+    });
+  }
+
+  void sourceSetSampleRate(int sampleRateHz) {
+    _commandPort?.send(<String, Object>{
+      'type': 'sourceSampleRate',
+      'sampleRateHz': sampleRateHz,
+    });
+  }
+
+  void sourceSetTunerAgc(bool enabled) {
+    _commandPort?.send(<String, Object>{
+      'type': 'sourceTunerAgc',
+      'enabled': enabled,
+    });
+  }
+
+  void sourceSetGainIndex(int index) {
+    _commandPort?.send(<String, Object>{
+      'type': 'sourceGainIndex',
+      'index': index,
+    });
+  }
+
+  void sourceSetGainDb(double gainDb) {
+    _commandPort?.send(<String, Object>{
+      'type': 'sourceGainDb',
+      'gainDb': gainDb,
+    });
+  }
+
+  void sourceSetPpm(int ppm) {
+    _commandPort?.send(<String, Object>{
+      'type': 'sourcePpm',
+      'ppm': ppm,
+    });
+  }
+
+  void sourceSetRtlAgc(bool enabled) {
+    _commandPort?.send(<String, Object>{
+      'type': 'sourceRtlAgc',
+      'enabled': enabled,
+    });
+  }
+
+  void sourceSetDirectSampling(int mode) {
+    _commandPort?.send(<String, Object>{
+      'type': 'sourceDirectSampling',
+      'mode': mode,
+    });
+  }
+
+  void sourceSetOffsetTuning(bool enabled) {
+    _commandPort?.send(<String, Object>{
+      'type': 'sourceOffsetTuning',
+      'enabled': enabled,
+    });
+  }
+
+  void sourceSetBiasTee(bool enabled) {
+    _commandPort?.send(<String, Object>{
+      'type': 'sourceBiasTee',
+      'enabled': enabled,
+    });
+  }
+
   void addIq(Uint8List data) {
     final port = _commandPort;
     if (port == null || data.isEmpty) {
@@ -263,6 +398,7 @@ class SdrDspWorker {
     await _backendController.close();
     await _rdsController.close();
     await _ctcssController.close();
+    await _sourceStateController.close();
   }
 }
 
