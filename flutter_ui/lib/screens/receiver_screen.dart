@@ -1809,6 +1809,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     });
     _client.setMode(_mode);
     _client.setBandwidth(preset.bandwidthHz);
+    _applyRadioDetailOptions();
     _tuneFrequency(preset.frequencyHz);
   }
 
