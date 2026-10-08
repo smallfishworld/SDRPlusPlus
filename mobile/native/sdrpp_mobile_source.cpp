@@ -17,6 +17,7 @@
 
 #include <dsp/stream.h>
 #include <dsp/types.h>
+#include <utils/net.h>
 #include "../../source_modules/rtl_tcp_source/src/rtl_tcp_client.h"
 #include "../../source_modules/file_source/src/wavreader.h"
 
@@ -31,6 +32,7 @@ enum class MobileSourceKind : int {
     None = 0,
     RtlTcp = 1,
     File = 2,
+    Network = 3,
 };
 
 class MobileSourceRuntime {
@@ -196,6 +198,92 @@ public:
         return -1;
     }
 
+    int connectNetwork(
+        const char* host,
+        int port,
+        uint32_t sampleRateHz,
+        int protocol,
+        int sampleType,
+        uint32_t requestedCenterFrequency) {
+        if (!engine || !host || !*host ||
+            port <= 0 || port > 65535 ||
+            protocol < 0 || protocol > 1 ||
+            sampleType < 0 || sampleType > 3) {
+            setError("Invalid Network Source parameters");
+            return -1;
+        }
+
+        disconnect();
+
+        try {
+            std::shared_ptr<net::Socket> socket;
+            if (protocol == 0) {
+                socket = net::connect(
+                    std::string(host),
+                    port);
+            }
+            else {
+                socket = net::openudp(
+                    std::string(host),
+                    port,
+                    "0.0.0.0",
+                    port,
+                    true);
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(networkMutex);
+                networkSocket = socket;
+            }
+
+            const uint32_t center =
+                requestedCenterFrequency != 0
+                    ? requestedCenterFrequency
+                    : 100000000u;
+
+            {
+                std::lock_guard<std::mutex> lock(stateMutex);
+                sampleRate = std::max<uint32_t>(
+                    1000u,
+                    sampleRateHz);
+                frequency = center;
+                lastError.clear();
+            }
+            centerFrequency.store(center);
+            networkProtocol = protocol;
+            networkSampleType = sampleType;
+
+            sdrpp_dsp_set_sample_rate(
+                engine,
+                std::max<uint32_t>(1000u, sampleRateHz));
+            sdrpp_dsp_set_frequency_offset(engine, 0.0f);
+
+            iqStream.clearReadStop();
+            iqStream.clearWriteStop();
+            running.store(true);
+            connected.store(true);
+            sourceKind.store(
+                static_cast<int>(MobileSourceKind::Network));
+
+            consumerThread =
+                std::thread(&MobileSourceRuntime::consumerLoop, this);
+            networkThread =
+                std::thread(
+                    &MobileSourceRuntime::networkProducerLoop,
+                    this);
+            return 0;
+        }
+        catch (const std::exception& e) {
+            setError(e.what());
+        }
+        catch (...) {
+            setError("Unknown Network Source error");
+        }
+
+        disconnect();
+        return -1;
+    }
+
     int kind() const {
         return sourceKind.load();
     }
@@ -228,11 +316,28 @@ public:
             }
         }
 
+        std::shared_ptr<net::Socket> network;
+        {
+            std::lock_guard<std::mutex> lock(networkMutex);
+            network = networkSocket;
+            networkSocket.reset();
+        }
+        if (network) {
+            try {
+                network->close();
+            }
+            catch (...) {
+            }
+        }
+
         iqStream.stopWriter();
         iqStream.stopReader();
 
         if (fileThread.joinable()) {
             fileThread.join();
+        }
+        if (networkThread.joinable()) {
+            networkThread.join();
         }
         if (consumerThread.joinable()) {
             consumerThread.join();
@@ -267,6 +372,10 @@ public:
         if (kindValue == MobileSourceKind::File) {
             return running.load() && fileReader != nullptr;
         }
+        if (kindValue == MobileSourceKind::Network) {
+            std::lock_guard<std::mutex> lock(networkMutex);
+            return networkSocket && networkSocket->isOpen();
+        }
         if (kindValue == MobileSourceKind::RtlTcp) {
             std::lock_guard<std::mutex> lock(clientMutex);
             return rtlClient && rtlClient->isOpen();
@@ -282,7 +391,8 @@ public:
 
         const auto kindValue =
             static_cast<MobileSourceKind>(sourceKind.load());
-        if (kindValue == MobileSourceKind::File) {
+        if (kindValue == MobileSourceKind::File ||
+            kindValue == MobileSourceKind::Network) {
             const int64_t offset =
                 static_cast<int64_t>(value) -
                 static_cast<int64_t>(centerFrequency.load());
@@ -301,9 +411,20 @@ public:
     }
 
     int setSampleRate(uint32_t value) {
-        if (static_cast<MobileSourceKind>(sourceKind.load()) ==
-            MobileSourceKind::File) {
+        const auto kindValue =
+            static_cast<MobileSourceKind>(sourceKind.load());
+        if (kindValue == MobileSourceKind::File) {
             return -1;
+        }
+        if (kindValue == MobileSourceKind::Network) {
+            {
+                std::lock_guard<std::mutex> lock(stateMutex);
+                sampleRate = std::max<uint32_t>(1000u, value);
+            }
+            sdrpp_dsp_set_sample_rate(
+                engine,
+                std::max<uint32_t>(1000u, value));
+            return 0;
         }
         {
             std::lock_guard<std::mutex> lock(stateMutex);
@@ -510,6 +631,131 @@ private:
             nextWake += blockDuration;
             std::this_thread::sleep_until(nextWake);
         }
+    }
+
+    static std::size_t networkSampleSize(int type) {
+        switch (type) {
+            case 0: return sizeof(int8_t) * 2u;
+            case 1: return sizeof(int16_t) * 2u;
+            case 2: return sizeof(int32_t) * 2u;
+            case 3: return sizeof(float) * 2u;
+            default: return sizeof(int16_t) * 2u;
+        }
+    }
+
+    void networkProducerLoop() {
+        std::shared_ptr<net::Socket> socket;
+        {
+            std::lock_guard<std::mutex> lock(networkMutex);
+            socket = networkSocket;
+        }
+        if (!socket) {
+            connected.store(false);
+            return;
+        }
+
+        uint32_t sr;
+        {
+            std::lock_guard<std::mutex> lock(stateMutex);
+            sr = std::max<uint32_t>(1000u, sampleRate);
+        }
+
+        const std::size_t blockSize =
+            std::max<std::size_t>(
+                256u,
+                std::min<std::size_t>(
+                    static_cast<std::size_t>(sr / 200u),
+                    static_cast<std::size_t>(STREAM_BUFFER_SIZE)));
+        const std::size_t sampleSize =
+            networkSampleSize(networkSampleType);
+        const bool forceSize = networkProtocol == 0;
+        const std::size_t frameSamples =
+            forceSize
+                ? blockSize
+                : static_cast<std::size_t>(STREAM_BUFFER_SIZE);
+        std::vector<uint8_t> buffer(
+            frameSamples * sampleSize);
+
+        while (running.load() && socket->isOpen()) {
+            const int bytes = socket->recv(
+                buffer.data(),
+                buffer.size(),
+                forceSize);
+            if (bytes <= 0) {
+                break;
+            }
+
+            const std::size_t count =
+                static_cast<std::size_t>(bytes) / sampleSize;
+            if (count == 0) {
+                continue;
+            }
+
+            switch (networkSampleType) {
+                case 0: {
+                    const auto* in =
+                        reinterpret_cast<const int8_t*>(
+                            buffer.data());
+                    for (std::size_t i = 0; i < count; ++i) {
+                        iqStream.writeBuf[i].re =
+                            static_cast<float>(in[i * 2]) /
+                            128.0f;
+                        iqStream.writeBuf[i].im =
+                            static_cast<float>(in[i * 2 + 1]) /
+                            128.0f;
+                    }
+                    break;
+                }
+                case 1: {
+                    const auto* in =
+                        reinterpret_cast<const int16_t*>(
+                            buffer.data());
+                    for (std::size_t i = 0; i < count; ++i) {
+                        iqStream.writeBuf[i].re =
+                            static_cast<float>(in[i * 2]) /
+                            32768.0f;
+                        iqStream.writeBuf[i].im =
+                            static_cast<float>(in[i * 2 + 1]) /
+                            32768.0f;
+                    }
+                    break;
+                }
+                case 2: {
+                    const auto* in =
+                        reinterpret_cast<const int32_t*>(
+                            buffer.data());
+                    for (std::size_t i = 0; i < count; ++i) {
+                        iqStream.writeBuf[i].re =
+                            static_cast<float>(
+                                static_cast<double>(in[i * 2]) /
+                                2147483647.0);
+                        iqStream.writeBuf[i].im =
+                            static_cast<float>(
+                                static_cast<double>(in[i * 2 + 1]) /
+                                2147483647.0);
+                    }
+                    break;
+                }
+                case 3: {
+                    const auto* in =
+                        reinterpret_cast<const float*>(
+                            buffer.data());
+                    std::memcpy(
+                        iqStream.writeBuf,
+                        in,
+                        count * sizeof(dsp::complex_t));
+                    break;
+                }
+                default:
+                    break;
+            }
+
+            if (!iqStream.swap(static_cast<int>(count))) {
+                break;
+            }
+        }
+
+        connected.store(false);
     }
 
     template <typename F>
@@ -719,6 +965,7 @@ private:
 
     std::thread consumerThread;
     std::thread fileThread;
+    std::thread networkThread;
     std::atomic<bool> running{false};
     std::atomic<bool> connected{false};
     std::atomic<int> sourceKind{
@@ -727,6 +974,11 @@ private:
 
     std::unique_ptr<WavReader> fileReader;
     bool fileFloat32 = false;
+
+    mutable std::mutex networkMutex;
+    std::shared_ptr<net::Socket> networkSocket;
+    int networkProtocol = 0;
+    int networkSampleType = 1;
 
     mutable std::mutex stateMutex;
     uint32_t sampleRate = 1024000;
@@ -802,6 +1054,26 @@ int sdrpp_source_open_file(
     return asSource(source)->openFile(
         path,
         float32_mode != 0,
+        center_frequency_hz);
+}
+
+int sdrpp_source_connect_network(
+    sdrpp_source_t source,
+    const char* host,
+    int port,
+    uint32_t sample_rate_hz,
+    int protocol,
+    int sample_type,
+    uint32_t center_frequency_hz) {
+    if (!source) {
+        return -1;
+    }
+    return asSource(source)->connectNetwork(
+        host,
+        port,
+        sample_rate_hz,
+        protocol,
+        sample_type,
         center_frequency_hz);
 }
 
