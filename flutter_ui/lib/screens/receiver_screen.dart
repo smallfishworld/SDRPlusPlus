@@ -741,7 +741,13 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
             _ctcssMode = 0;
             _detectedCtcssHz = 0;
           }
-          if (mode != 'NFM' && mode != 'WFM') {
+          if (mode == 'WFM') {
+            _fmIfNrPreset = 3;
+          }
+          else if (mode == 'NFM' && _fmIfNrPreset == 3) {
+            _fmIfNrPreset = 1;
+          }
+          else if (mode != 'NFM') {
             _fmIfNrEnabled = false;
           }
         });
@@ -1510,30 +1516,37 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
           },
         ),
         const SizedBox(height: 6),
-        DropdownButtonFormField<int>(
-          key: ValueKey<int>(_fmIfNrPreset),
-          initialValue: _fmIfNrPreset,
-          decoration: const InputDecoration(
-            labelText: 'IFNR preset',
-            prefixIcon: Icon(Icons.auto_fix_high_rounded),
-            border: OutlineInputBorder(),
-          ),
-          items: const <DropdownMenuItem<int>>[
-            DropdownMenuItem(value: 0, child: Text('NOAA APT · 9 bins')),
-            DropdownMenuItem(value: 1, child: Text('Voice · 15 bins')),
-            DropdownMenuItem(value: 2, child: Text('Narrow Band · 31 bins')),
-            DropdownMenuItem(value: 3, child: Text('Broadcast · 32 bins')),
-          ],
-          onChanged: _fmIfNrEnabled
-              ? (value) {
-                  if (value == null) {
-                    return;
+        if (_mode == 'WFM')
+          const ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.auto_fix_high_rounded),
+            title: Text('IFNR preset'),
+            subtitle: Text('Broadcast · 32 bins (SDR++ default)'),
+          )
+        else
+          DropdownButtonFormField<int>(
+            key: ValueKey<int>(_fmIfNrPreset),
+            initialValue: _fmIfNrPreset,
+            decoration: const InputDecoration(
+              labelText: 'IFNR preset',
+              prefixIcon: Icon(Icons.auto_fix_high_rounded),
+              border: OutlineInputBorder(),
+            ),
+            items: const <DropdownMenuItem<int>>[
+              DropdownMenuItem(value: 0, child: Text('NOAA APT · 9 bins')),
+              DropdownMenuItem(value: 1, child: Text('Voice · 15 bins')),
+              DropdownMenuItem(value: 2, child: Text('Narrow Band · 31 bins')),
+            ],
+            onChanged: _fmIfNrEnabled
+                ? (value) {
+                    if (value == null) {
+                      return;
+                    }
+                    setState(() => _fmIfNrPreset = value);
+                    _client.setFmIfNr(true, value);
                   }
-                  setState(() => _fmIfNrPreset = value);
-                  _client.setFmIfNr(true, value);
-                }
-              : null,
-        ),
+                : null,
+          ),
         const SizedBox(height: 12),
       ]);
     }
@@ -1562,7 +1575,13 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
               if (value == 0) {
                 _detectedCtcssHz = 0;
               }
+              else {
+                _squelchEnabled = false;
+              }
             });
+            if (value != 0) {
+              _client.setSquelch(false, _squelchDb);
+            }
             _client.setCtcss(value, _ctcssToneIndex);
           },
         ),
@@ -2001,8 +2020,15 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       setState(() {
         _squelchEnabled = result.$1;
         _squelchDb = result.$2;
+        if (_squelchEnabled) {
+          _ctcssMode = 0;
+          _detectedCtcssHz = 0;
+        }
       });
       _client.setSquelch(_squelchEnabled, _squelchDb);
+      if (_squelchEnabled) {
+        _client.setCtcss(0, _ctcssToneIndex);
+      }
     }
   }
 
