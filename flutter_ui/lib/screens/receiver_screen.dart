@@ -727,6 +727,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         });
         _client.setMode(mode);
         _client.setBandwidth(_bandwidthKhz * 1000);
+        _applyRadioDetailOptions();
       },
       borderRadius: BorderRadius.circular(13),
       child: AnimatedContainer(
@@ -1636,6 +1637,31 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     }
   }
 
+  void _applyRadioDetailOptions() {
+    _client.setCtcss(_ctcssMode, _ctcssToneIndex);
+    _client.setFmIfNr(_fmIfNrEnabled, _fmIfNrPreset);
+    _client.setAmAgc(
+      _amCarrierAgc,
+      _amAgcAttackMs,
+      _amAgcDecayMs,
+    );
+    _client.setSsbAgc(
+      _ssbAgcAttackMs,
+      _ssbAgcDecayMs,
+    );
+    _client.setCwOptions(
+      _cwToneHz,
+      _cwAgcAttackMs,
+      _cwAgcDecayMs,
+    );
+    _client.setNfmOptions(_nfmLowPass);
+    _client.setWfmOptions(
+      _wfmStereo,
+      _wfmLowPass,
+      _wfmRdsEnabled,
+    );
+  }
+
   Future<void> _connect() async {
     final port = int.tryParse(_portController.text.trim()) ?? 1234;
     setState(() {
@@ -1670,6 +1696,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       );
       _client.setHighPass(_highPassEnabled);
       _client.setDeemphasis(_deemphasisUs);
+      _applyRadioDetailOptions();
       if (mounted) {
         setState(() => _tab = 0);
       }
