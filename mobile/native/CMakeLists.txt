@@ -5,6 +5,7 @@ project(sdrpp_mobile_native LANGUAGES CXX)
 add_library(sdrpp_mobile SHARED
     sdrpp_mobile_dsp.cpp
     sdrpp_mobile_source.cpp
+    remote_sources.cpp
     ../../decoder_modules/radio/src/rds.cpp
     ../../source_modules/rtl_tcp_source/src/rtl_tcp_client.cpp
     ../../core/src/utils/net.cpp
@@ -25,6 +26,7 @@ target_include_directories(sdrpp_mobile PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../decoder_modules/radio/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../source_modules/rtl_tcp_source/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../source_modules/file_source/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../source_modules/spyserver_source/src
 )
 
 if(MSVC)
