@@ -42,7 +42,18 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       TextEditingController(text: '127.0.0.1');
   final TextEditingController _nativeRemotePortController =
       TextEditingController(text: '50000');
+  final TextEditingController _soapyArgsController =
+      TextEditingController(text: 'driver=rtlsdr');
+  final TextEditingController _soapySampleRateController =
+      TextEditingController(text: '2048000');
+  final TextEditingController _soapyBandwidthController =
+      TextEditingController(text: '0');
+  final TextEditingController _soapyChannelController =
+      TextEditingController(text: '0');
   int _nativeRemoteGainDb = 0;
+  double _soapyGainDb = 0;
+  List<String> _soapyDevices = const <String>[];
+  bool _soapyRefreshing = false;
 
   StreamSubscription<Float32List>? _spectrumSubscription;
   StreamSubscription<Uint8List>? _audioSubscription;
@@ -263,6 +274,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     _spyServerPortController.dispose();
     _nativeRemoteHostController.dispose();
     _nativeRemotePortController.dispose();
+    _soapyArgsController.dispose();
+    _soapySampleRateController.dispose();
+    _soapyBandwidthController.dispose();
+    _soapyChannelController.dispose();
     super.dispose();
   }
 
@@ -1225,6 +1240,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                   'Backend: official Hermes/OpenHPSDR native runtime',
                 ReceiverSourceKind.spectranHttp =>
                   'Backend: official Spectran HTTP native runtime',
+                ReceiverSourceKind.soapy =>
+                  'Backend: SoapySDR · ${_client.soapyDriver.isEmpty ? 'generic hardware' : _client.soapyDriver}${_client.soapyHardware.isEmpty ? '' : ' / ${_client.soapyHardware}'}',
               }
             : 'Backend: Dart compatibility transport')
         : 'Backend: native SDR++ source runtime';
@@ -1244,7 +1261,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
             ),
             const SizedBox(height: 5),
             const Text(
-              'Active native sources now include RTL-TCP, IQ File, Network Source, SDR++ Server and SpyServer.',
+              'Native sources include RTL-TCP, direct RTL-SDR USB, network protocols and generic SoapySDR hardware discovery.',
               style: TextStyle(color: Color(0xFF7F91A5)),
             ),
             const SizedBox(height: 12),
@@ -1292,6 +1309,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                   value: ReceiverSourceKind.spectranHttp,
                   child: Text('Spectran HTTP'),
                 ),
+                DropdownMenuItem(
+                  value: ReceiverSourceKind.soapy,
+                  child: Text('SoapySDR · Generic Hardware'),
+                ),
               ],
               onChanged: connected
                   ? null
@@ -1300,6 +1321,9 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                         setState(() => _selectedSourceKind = value);
                         if (value == ReceiverSourceKind.rtlSdrUsb) {
                           unawaited(_refreshRtlUsbDevices());
+                        }
+                        if (value == ReceiverSourceKind.soapy) {
+                          unawaited(_refreshSoapyDevices());
                         }
                         if (value == ReceiverSourceKind.rfspace) {
                           _nativeRemotePortController.text = '50000';
@@ -1335,6 +1359,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                 _selectedSourceKind == ReceiverSourceKind.hermes ||
                 _selectedSourceKind == ReceiverSourceKind.spectranHttp)
               ..._nativeRemoteSourceControls(connected),
+            if (_selectedSourceKind == ReceiverSourceKind.soapy)
+              ..._soapySourceControls(connected),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: connected ? _disconnect : _connectSelectedSource,
@@ -1357,6 +1383,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                           Icons.settings_input_antenna_rounded,
                         ReceiverSourceKind.spectranHttp =>
                           Icons.language_rounded,
+                        ReceiverSourceKind.soapy =>
+                          Icons.memory_rounded,
                       },
               ),
               label: Text(
@@ -1380,6 +1408,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                           'Connect Hermes',
                         ReceiverSourceKind.spectranHttp =>
                           'Connect Spectran HTTP',
+                        ReceiverSourceKind.soapy =>
+                          'Open SoapySDR device',
                       },
               ),
             ),
@@ -2166,6 +2196,9 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       case ReceiverSourceKind.rtlTcp:
         await _connect();
         break;
+      case ReceiverSourceKind.soapy:
+        await _connectSoapySource();
+        break;
     }
   }
 
@@ -2405,6 +2438,223 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
             ? _client.lastError
             : error.toString();
         setState(() => _connectionError = message);
+      }
+    }
+  }
+
+  Future<void> _refreshSoapyDevices() async {
+    if (_soapyRefreshing) {
+      return;
+    }
+    setState(() => _soapyRefreshing = true);
+    try {
+      final devices = await _client.enumerateSoapy();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _soapyDevices = devices;
+        if (devices.isNotEmpty &&
+            (_soapyArgsController.text.trim().isEmpty ||
+                _soapyArgsController.text.trim() == 'driver=rtlsdr')) {
+          _soapyArgsController.text = devices.first;
+        }
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _soapyRefreshing = false);
+      }
+    }
+  }
+
+  List<Widget> _soapySourceControls(bool connected) {
+    final selectedArgs = _soapyArgsController.text.trim();
+    final dropdownValue =
+        _soapyDevices.contains(selectedArgs) ? selectedArgs : null;
+
+    return <Widget>[
+      Row(
+        children: <Widget>[
+          Expanded(
+            child: DropdownButtonFormField<String>(
+              value: dropdownValue,
+              decoration: const InputDecoration(
+                labelText: 'Detected SoapySDR devices',
+                prefixIcon: Icon(Icons.usb_rounded),
+                border: OutlineInputBorder(),
+              ),
+              items: _soapyDevices
+                  .map(
+                    (device) => DropdownMenuItem<String>(
+                      value: device,
+                      child: Text(
+                        device,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: connected
+                  ? null
+                  : (value) {
+                      if (value != null) {
+                        setState(() {
+                          _soapyArgsController.text = value;
+                        });
+                      }
+                    },
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton.filledTonal(
+            onPressed: connected || _soapyRefreshing
+                ? null
+                : _refreshSoapyDevices,
+            tooltip: 'Refresh SoapySDR devices',
+            icon: _soapyRefreshing
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      TextField(
+        controller: _soapyArgsController,
+        enabled: !connected,
+        decoration: const InputDecoration(
+          labelText: 'Device arguments',
+          hintText: 'driver=hackrf  /  driver=rtlsdr',
+          prefixIcon: Icon(Icons.code_rounded),
+          border: OutlineInputBorder(),
+        ),
+      ),
+      const SizedBox(height: 12),
+      Row(
+        children: <Widget>[
+          Expanded(
+            child: TextField(
+              controller: _soapySampleRateController,
+              enabled: !connected,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Sample rate (Hz)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: _soapyBandwidthController,
+              enabled: !connected,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'RF bandwidth (Hz)',
+                helperText: '0 = driver default',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      TextField(
+        controller: _soapyChannelController,
+        enabled: !connected,
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(
+          labelText: 'RX channel',
+          prefixIcon: Icon(Icons.call_split_rounded),
+          border: OutlineInputBorder(),
+        ),
+      ),
+      const SizedBox(height: 6),
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Hardware AGC'),
+        subtitle: const Text(
+          'Uses SoapySDR gain-mode capability when supported',
+        ),
+        value: _tunerAgc,
+        onChanged: (value) {
+          setState(() => _tunerAgc = value);
+          if (connected) {
+            _client.setTunerAgc(value);
+          }
+        },
+      ),
+      if (!_tunerAgc) ...<Widget>[
+        Text('Gain  ${_soapyGainDb.toStringAsFixed(1)} dB'),
+        Slider(
+          value: _soapyGainDb,
+          min: -30,
+          max: 80,
+          divisions: 220,
+          label: '${_soapyGainDb.toStringAsFixed(1)} dB',
+          onChanged: (value) {
+            setState(() => _soapyGainDb = value);
+            if (connected) {
+              _client.setGainDb(value);
+            }
+          },
+        ),
+      ],
+      const Text(
+        'SoapySDR provides one common RX API for compatible RTL-SDR, HackRF, Airspy, bladeRF, LimeSDR, PlutoSDR, USRP and other drivers. A device is usable when its Soapy module and native SDK are packaged for this platform.',
+        style: TextStyle(
+          color: Color(0xFF7F91A5),
+          fontSize: 12,
+          height: 1.4,
+        ),
+      ),
+    ];
+  }
+
+  Future<void> _connectSoapySource() async {
+    final args = _soapyArgsController.text.trim();
+    if (args.isEmpty) {
+      setState(() => _connectionError = 'Enter or select a SoapySDR device.');
+      return;
+    }
+
+    final sampleRate =
+        int.tryParse(_soapySampleRateController.text.trim()) ?? 2048000;
+    final rfBandwidth =
+        double.tryParse(_soapyBandwidthController.text.trim()) ?? 0;
+    final channel =
+        int.tryParse(_soapyChannelController.text.trim()) ?? 0;
+
+    setState(() {
+      _connectionError = '';
+      _waterfall.clear();
+    });
+
+    try {
+      await _audio.start();
+      await _client.connectSoapy(
+        deviceArgs: args,
+        sampleRateHz: sampleRate,
+        frequencyHz: _frequencyHz,
+        rfBandwidthHz: rfBandwidth,
+        gainDb: _soapyGainDb,
+        agc: _tunerAgc,
+        channel: channel,
+        mode: _mode,
+        bandwidthHz: _bandwidthKhz * 1000,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _sampleRateHz = _client.sampleRateHz;
+        _frequencyHz = _client.frequencyHz;
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() => _connectionError = error.toString());
       }
     }
   }
