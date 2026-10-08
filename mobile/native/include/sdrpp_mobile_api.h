@@ -57,6 +57,19 @@ SDRPP_MOBILE_API int sdrpp_dsp_set_squelch(
     int enabled,
     float level_db);
 
+SDRPP_MOBILE_API int sdrpp_dsp_set_noise_blanker(
+    sdrpp_engine_t engine,
+    int enabled,
+    float level);
+
+SDRPP_MOBILE_API int sdrpp_dsp_set_high_pass(
+    sdrpp_engine_t engine,
+    int enabled);
+
+SDRPP_MOBILE_API int sdrpp_dsp_set_deemphasis(
+    sdrpp_engine_t engine,
+    int mode_us);
+
 /*
  * Clear resampler/demodulator/AGC history after retuning so old-channel state
  * and buffered audio cannot mute or contaminate the new frequency.
