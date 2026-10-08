@@ -380,177 +380,6 @@ class SdrDspWorker {
     });
   }
 
-  ({bool ok, String error}) connectRtlTcpSource({
-    required String host,
-    required int port,
-    required int sampleRateHz,
-    required int frequencyHz,
-  }) {
-    final source = _source;
-    if (source == null) {
-      return (
-        ok: false,
-        error: 'Native SDR++ RTL-TCP source is unavailable',
-      );
-    }
-
-    source.disconnect();
-    final ok = source.connect(
-      host: host,
-      port: port,
-      sampleRateHz: sampleRateHz,
-      frequencyHz: frequencyHz,
-    );
-    if (!ok) {
-      _sourceConnected = false;
-      return (ok: false, error: source.lastError);
-    }
-
-    this.sampleRateHz = sampleRateHz;
-    _sourceConnected = true;
-    _sourcePollTimer?.cancel();
-    _sourcePollTimer = Timer.periodic(
-      const Duration(milliseconds: 20),
-      (_) => _pollNativeSource(),
-    );
-    mainPort.send(<String, Object>{
-      'type': 'sourceState',
-      'connected': true,
-      'error': '',
-    });
-    return (ok: true, error: '');
-  }
-
-  void disconnectSource() {
-    _sourcePollTimer?.cancel();
-    _sourcePollTimer = null;
-    _source?.disconnect();
-    _sourceConnected = false;
-    mainPort.send(<String, Object>{
-      'type': 'sourceState',
-      'connected': false,
-      'error': '',
-    });
-  }
-
-  void sourceSetFrequency(int value) {
-    _source?.setFrequency(value);
-  }
-
-  void sourceSetSampleRate(int value) {
-    sampleRateHz = value;
-    _source?.setSampleRate(value);
-  }
-
-  void sourceSetTunerAgc(bool enabled) {
-    _source?.setTunerAgc(enabled);
-  }
-
-  void sourceSetGainIndex(int index) {
-    _source?.setGainIndex(index);
-  }
-
-  void sourceSetGainDb(double gainDb) {
-    _source?.setGainDb(gainDb);
-  }
-
-  void sourceSetPpm(int ppm) {
-    _source?.setPpm(ppm);
-  }
-
-  void sourceSetRtlAgc(bool enabled) {
-    _source?.setRtlAgc(enabled);
-  }
-
-  void sourceSetDirectSampling(int mode) {
-    _source?.setDirectSampling(mode);
-  }
-
-  void sourceSetOffsetTuning(bool enabled) {
-    _source?.setOffsetTuning(enabled);
-  }
-
-  void sourceSetBiasTee(bool enabled) {
-    _source?.setBiasTee(enabled);
-  }
-
-  void _pollNativeSource() {
-    final source = _source;
-    if (source == null || !_sourceConnected) {
-      return;
-    }
-
-    if (!source.isConnected) {
-      _sourceConnected = false;
-      _sourcePollTimer?.cancel();
-      _sourcePollTimer = null;
-      mainPort.send(<String, Object>{
-        'type': 'sourceState',
-        'connected': false,
-        'error': source.lastError,
-      });
-      return;
-    }
-
-    final pcm = source.readAudio();
-    if (pcm.isNotEmpty) {
-      mainPort.send(<String, Object>{
-        'type': 'audio',
-        'data': TransferableTypedData.fromList(<Uint8List>[pcm]),
-      });
-    }
-
-    final spectrum = source.readSpectrum();
-    if (spectrum != null && spectrum.isNotEmpty) {
-      mainPort.send(<String, Object>{
-        'type': 'spectrum',
-        'data': TransferableTypedData.fromList(
-          <Uint8List>[spectrum.buffer.asUint8List()],
-        ),
-      });
-    }
-
-    _pollNativeMetadata(DateTime.now());
-  }
-
-  void _pollNativeMetadata(DateTime now) {
-    final native = _native;
-    if (native == null) {
-      return;
-    }
-
-    if (mode == 'WFM' &&
-        now.difference(_lastRdsPoll).inMilliseconds >= 500) {
-      _lastRdsPoll = now;
-      final rds = native.getRds();
-      if (rds != null &&
-          (rds.programService != _lastRdsPs ||
-              rds.radioText != _lastRdsText)) {
-        _lastRdsPs = rds.programService;
-        _lastRdsText = rds.radioText;
-        mainPort.send(<String, Object>{
-          'type': 'rds',
-          'programService': _lastRdsPs,
-          'radioText': _lastRdsText,
-        });
-      }
-    }
-
-    if (mode == 'NFM' &&
-        now.difference(_lastCtcssPoll).inMilliseconds >= 250) {
-      _lastCtcssPoll = now;
-      final tone = native.getCtcss();
-      final toneIndex = tone?.toneIndex ?? -1;
-      if (toneIndex != _lastCtcssToneIndex) {
-        _lastCtcssToneIndex = toneIndex;
-        mainPort.send(<String, Object>{
-          'type': 'ctcss',
-          'toneIndex': toneIndex,
-          'toneHz': tone?.toneHz ?? 0.0,
-        });
-      }
-    }
-  }
 
   void reset() {
     _commandPort?.send(<String, Object>{'type': 'reset'});
@@ -898,6 +727,177 @@ class _DspProcessor {
     );
   }
 
+  ({bool ok, String error}) connectRtlTcpSource({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    required int frequencyHz,
+  }) {
+    final source = _source;
+    if (source == null) {
+      return (
+        ok: false,
+        error: 'Native SDR++ RTL-TCP source is unavailable',
+      );
+    }
+
+    source.disconnect();
+    final ok = source.connect(
+      host: host,
+      port: port,
+      sampleRateHz: sampleRateHz,
+      frequencyHz: frequencyHz,
+    );
+    if (!ok) {
+      _sourceConnected = false;
+      return (ok: false, error: source.lastError);
+    }
+
+    this.sampleRateHz = sampleRateHz;
+    _sourceConnected = true;
+    _sourcePollTimer?.cancel();
+    _sourcePollTimer = Timer.periodic(
+      const Duration(milliseconds: 20),
+      (_) => _pollNativeSource(),
+    );
+    mainPort.send(<String, Object>{
+      'type': 'sourceState',
+      'connected': true,
+      'error': '',
+    });
+    return (ok: true, error: '');
+  }
+
+  void disconnectSource() {
+    _sourcePollTimer?.cancel();
+    _sourcePollTimer = null;
+    _source?.disconnect();
+    _sourceConnected = false;
+    mainPort.send(<String, Object>{
+      'type': 'sourceState',
+      'connected': false,
+      'error': '',
+    });
+  }
+
+  void sourceSetFrequency(int value) {
+    _source?.setFrequency(value);
+  }
+
+  void sourceSetSampleRate(int value) {
+    sampleRateHz = value;
+    _source?.setSampleRate(value);
+  }
+
+  void sourceSetTunerAgc(bool enabled) {
+    _source?.setTunerAgc(enabled);
+  }
+
+  void sourceSetGainIndex(int index) {
+    _source?.setGainIndex(index);
+  }
+
+  void sourceSetGainDb(double gainDb) {
+    _source?.setGainDb(gainDb);
+  }
+
+  void sourceSetPpm(int ppm) {
+    _source?.setPpm(ppm);
+  }
+
+  void sourceSetRtlAgc(bool enabled) {
+    _source?.setRtlAgc(enabled);
+  }
+
+  void sourceSetDirectSampling(int mode) {
+    _source?.setDirectSampling(mode);
+  }
+
+  void sourceSetOffsetTuning(bool enabled) {
+    _source?.setOffsetTuning(enabled);
+  }
+
+  void sourceSetBiasTee(bool enabled) {
+    _source?.setBiasTee(enabled);
+  }
+
+  void _pollNativeSource() {
+    final source = _source;
+    if (source == null || !_sourceConnected) {
+      return;
+    }
+
+    if (!source.isConnected) {
+      _sourceConnected = false;
+      _sourcePollTimer?.cancel();
+      _sourcePollTimer = null;
+      mainPort.send(<String, Object>{
+        'type': 'sourceState',
+        'connected': false,
+        'error': source.lastError,
+      });
+      return;
+    }
+
+    final pcm = source.readAudio();
+    if (pcm.isNotEmpty) {
+      mainPort.send(<String, Object>{
+        'type': 'audio',
+        'data': TransferableTypedData.fromList(<Uint8List>[pcm]),
+      });
+    }
+
+    final spectrum = source.readSpectrum();
+    if (spectrum != null && spectrum.isNotEmpty) {
+      mainPort.send(<String, Object>{
+        'type': 'spectrum',
+        'data': TransferableTypedData.fromList(
+          <Uint8List>[spectrum.buffer.asUint8List()],
+        ),
+      });
+    }
+
+    _pollNativeMetadata(DateTime.now());
+  }
+
+  void _pollNativeMetadata(DateTime now) {
+    final native = _native;
+    if (native == null) {
+      return;
+    }
+
+    if (mode == 'WFM' &&
+        now.difference(_lastRdsPoll).inMilliseconds >= 500) {
+      _lastRdsPoll = now;
+      final rds = native.getRds();
+      if (rds != null &&
+          (rds.programService != _lastRdsPs ||
+              rds.radioText != _lastRdsText)) {
+        _lastRdsPs = rds.programService;
+        _lastRdsText = rds.radioText;
+        mainPort.send(<String, Object>{
+          'type': 'rds',
+          'programService': _lastRdsPs,
+          'radioText': _lastRdsText,
+        });
+      }
+    }
+
+    if (mode == 'NFM' &&
+        now.difference(_lastCtcssPoll).inMilliseconds >= 250) {
+      _lastCtcssPoll = now;
+      final tone = native.getCtcss();
+      final toneIndex = tone?.toneIndex ?? -1;
+      if (toneIndex != _lastCtcssToneIndex) {
+        _lastCtcssToneIndex = toneIndex;
+        mainPort.send(<String, Object>{
+          'type': 'ctcss',
+          'toneIndex': toneIndex,
+          'toneHz': tone?.toneHz ?? 0.0,
+        });
+      }
+    }
+  }
   void reset() {
     _fftSkipSamples = 0;
     _native?.reset();
