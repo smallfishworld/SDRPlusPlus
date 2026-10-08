@@ -212,6 +212,12 @@ jobs:
           readelf -d "$JNI/librtlsdrSupport.so" | grep NEEDED || true
           readelf -d "$JNI/libremoteSupport.so" | grep NEEDED || true
 
+          # Package direct Airspy USB support. The vendor library already
+          # exposes airspy_open_fd() specifically for Android UsbManager FDs.
+          LIBUSB_SO="$DEPS/libusb/android/libs/arm64-v8a/libusb1.0.so"
+          export NDK DEPS SOAPY_PREFIX JNI LIBUSB_SO
+          bash "$GITHUB_WORKSPACE/tooling/build_android_soapy_airspy.sh"
+
       - name: Build official SDR++ DSP native bridge
         shell: bash
         run: |
