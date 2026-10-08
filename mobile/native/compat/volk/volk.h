@@ -147,6 +147,40 @@ static inline void volk_32f_s32f_multiply_32f(
     }
 }
 
+static inline void volk_8i_s32f_convert_32f(
+    float* out,
+    const int8_t* input,
+    float scalar,
+    unsigned int count) {
+    const float inv = scalar == 0.0f ? 0.0f : 1.0f / scalar;
+    for (unsigned int n = 0; n < count; ++n) {
+        out[n] = static_cast<float>(input[n]) * inv;
+    }
+}
+
+static inline void volk_16i_s32f_convert_32f(
+    float* out,
+    const int16_t* input,
+    float scalar,
+    unsigned int count) {
+    const float inv = scalar == 0.0f ? 0.0f : 1.0f / scalar;
+    for (unsigned int n = 0; n < count; ++n) {
+        out[n] = static_cast<float>(input[n]) * inv;
+    }
+}
+
+static inline void volk_32i_s32f_convert_32f(
+    float* out,
+    const int32_t* input,
+    float scalar,
+    unsigned int count) {
+    const double inv = scalar == 0.0f ? 0.0 : 1.0 / static_cast<double>(scalar);
+    for (unsigned int n = 0; n < count; ++n) {
+        out[n] = static_cast<float>(
+            static_cast<double>(input[n]) * inv);
+    }
+}
+
 static inline void volk_32f_x2_multiply_32f(
     float* out,
     const float* a,
