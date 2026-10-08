@@ -25,6 +25,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       TextEditingController(text: '192.168.2.110');
   final TextEditingController _portController =
       TextEditingController(text: '1234');
+  final TextEditingController _networkHostController =
+      TextEditingController(text: '127.0.0.1');
+  final TextEditingController _networkPortController =
+      TextEditingController(text: '1234');
 
   StreamSubscription<Float32List>? _spectrumSubscription;
   StreamSubscription<Uint8List>? _audioSubscription;
@@ -42,6 +46,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   ReceiverSourceKind _selectedSourceKind = ReceiverSourceKind.rtlTcp;
   String _iqFilePath = '';
   bool _iqFileFloat32 = false;
+  int _networkProtocol = 0; // 0 TCP client, 1 UDP
+  int _networkSampleType = 1; // 0 I8, 1 I16, 2 I32, 3 F32
 
   int _tab = 0;
   String _presetCategory = 'All';
@@ -231,6 +237,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     unawaited(_recorder.dispose());
     _hostController.dispose();
     _portController.dispose();
+    _networkHostController.dispose();
+    _networkPortController.dispose();
     super.dispose();
   }
 
@@ -1211,6 +1219,11 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                   icon: Icon(Icons.audio_file_rounded),
                   label: Text('IQ File'),
                 ),
+                ButtonSegment(
+                  value: ReceiverSourceKind.network,
+                  icon: Icon(Icons.hub_rounded),
+                  label: Text('Network'),
+                ),
               ],
               selected: <ReceiverSourceKind>{_selectedSourceKind},
               onSelectionChanged: connected
@@ -1229,7 +1242,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
             ),
             const SizedBox(height: 18),
             if (isRtlTcp) ..._rtlTcpSourceControls(connected),
-            if (!isRtlTcp) ..._fileSourceControls(connected),
+            if (_selectedSourceKind == ReceiverSourceKind.file)
+              ..._fileSourceControls(connected),
+            if (_selectedSourceKind == ReceiverSourceKind.network)
+              ..._networkSourceControls(connected),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: connected ? _disconnect : _connectSelectedSource,
@@ -1238,14 +1254,18 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                     ? Icons.link_off_rounded
                     : isRtlTcp
                         ? Icons.link_rounded
-                        : Icons.play_arrow_rounded,
+                        : _selectedSourceKind == ReceiverSourceKind.file
+                            ? Icons.play_arrow_rounded
+                            : Icons.hub_rounded,
               ),
               label: Text(
                 connected
                     ? 'Disconnect'
                     : isRtlTcp
                         ? 'Connect to receiver'
-                        : 'Open IQ file',
+                        : _selectedSourceKind == ReceiverSourceKind.file
+                            ? 'Open IQ file'
+                            : 'Connect Network Source',
               ),
             ),
             if (_connectionError.isNotEmpty) ...<Widget>[
@@ -1466,6 +1486,115 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     ];
   }
 
+  List<Widget> _networkSourceControls(bool connected) {
+    const sampleTypes = <String>[
+      'Int8 IQ',
+      'Int16 IQ',
+      'Int32 IQ',
+      'Float32 IQ',
+    ];
+
+    return <Widget>[
+      TextField(
+        controller: _networkHostController,
+        enabled: !connected,
+        decoration: const InputDecoration(
+          labelText: 'Remote host',
+          prefixIcon: Icon(Icons.dns_outlined),
+          border: OutlineInputBorder(),
+        ),
+      ),
+      const SizedBox(height: 12),
+      TextField(
+        controller: _networkPortController,
+        enabled: !connected,
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(
+          labelText: 'Port',
+          prefixIcon: Icon(Icons.lan_outlined),
+          border: OutlineInputBorder(),
+        ),
+      ),
+      const SizedBox(height: 12),
+      DropdownButtonFormField<int>(
+        initialValue: _networkProtocol,
+        decoration: const InputDecoration(
+          labelText: 'Protocol',
+          prefixIcon: Icon(Icons.swap_horiz_rounded),
+          border: OutlineInputBorder(),
+        ),
+        items: const <DropdownMenuItem<int>>[
+          DropdownMenuItem(
+            value: 0,
+            child: Text('TCP client'),
+          ),
+          DropdownMenuItem(
+            value: 1,
+            child: Text('UDP'),
+          ),
+        ],
+        onChanged: connected
+            ? null
+            : (value) {
+                if (value != null) {
+                  setState(() => _networkProtocol = value);
+                }
+              },
+      ),
+      const SizedBox(height: 12),
+      DropdownButtonFormField<int>(
+        initialValue: _networkSampleType,
+        decoration: const InputDecoration(
+          labelText: 'IQ sample type',
+          prefixIcon: Icon(Icons.data_object_rounded),
+          border: OutlineInputBorder(),
+        ),
+        items: <DropdownMenuItem<int>>[
+          for (var i = 0; i < sampleTypes.length; i++)
+            DropdownMenuItem(
+              value: i,
+              child: Text(sampleTypes[i]),
+            ),
+        ],
+        onChanged: connected
+            ? null
+            : (value) {
+                if (value != null) {
+                  setState(() => _networkSampleType = value);
+                }
+              },
+      ),
+      const SizedBox(height: 12),
+      Text(
+        'Sample rate  ${(_sampleRateHz / 1000000).toStringAsFixed(3)} MSPS',
+      ),
+      Slider(
+        value: _sampleRateHz.toDouble(),
+        min: 250000,
+        max: 3200000,
+        divisions: 59,
+        label:
+            '${(_sampleRateHz / 1000000).toStringAsFixed(3)} MSPS',
+        onChanged: connected
+            ? null
+            : (value) {
+                setState(
+                  () => _sampleRateHz =
+                      (value / 50000).round() * 50000,
+                );
+              },
+      ),
+      const Text(
+        'Matches the upstream SDR++ Network Source: TCP client/UDP with Int8, Int16, Int32 or Float32 interleaved IQ.',
+        style: TextStyle(
+          color: Color(0xFF7F91A5),
+          fontSize: 12,
+          height: 1.4,
+        ),
+      ),
+    ];
+  }
+
   Future<void> _pickIqFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -1480,10 +1609,58 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   }
 
   Future<void> _connectSelectedSource() async {
-    if (_selectedSourceKind == ReceiverSourceKind.file) {
-      await _connectFileSource();
-    } else {
-      await _connect();
+    switch (_selectedSourceKind) {
+      case ReceiverSourceKind.file:
+        await _connectFileSource();
+        break;
+      case ReceiverSourceKind.network:
+        await _connectNetworkSource();
+        break;
+      case ReceiverSourceKind.rtlTcp:
+        await _connect();
+        break;
+    }
+  }
+
+  Future<void> _connectNetworkSource() async {
+    final port =
+        int.tryParse(_networkPortController.text.trim()) ?? 1234;
+    setState(() {
+      _connectionError = '';
+      _waterfall.clear();
+    });
+
+    try {
+      await _audio.start();
+      _audio.setVolume(_volume);
+      await _client.connectNetwork(
+        host: _networkHostController.text.trim(),
+        port: port,
+        sampleRateHz: _sampleRateHz,
+        protocol: _networkProtocol,
+        sampleType: _networkSampleType,
+        centerFrequencyHz: _frequencyHz,
+        mode: _mode,
+        bandwidthHz: _bandwidthKhz * 1000,
+      );
+      _client.setSquelch(_squelchEnabled, _squelchDb);
+      _client.setNoiseBlanker(
+        _noiseBlankerEnabled,
+        _noiseBlankerLevel,
+      );
+      _client.setHighPass(_highPassEnabled);
+      _client.setDeemphasis(_deemphasisUs);
+      _applyRadioDetailOptions();
+      if (mounted) {
+        setState(() => _tab = 0);
+      }
+    } catch (error) {
+      if (mounted) {
+        final message = _client.lastError.isNotEmpty
+            ? _client.lastError
+            : error.toString();
+        setState(() => _connectionError = message);
+      }
     }
   }
 
