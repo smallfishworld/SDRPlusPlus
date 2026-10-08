@@ -354,6 +354,73 @@ class SdrDspWorker {
     }
   }
 
+  Future<({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
+  })> connectNetworkSource({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    required int protocol,
+    required int sampleType,
+    int centerFrequencyHz = 0,
+  }) async {
+    await start();
+    final commandPort = _commandPort;
+    if (commandPort == null) {
+      return (
+        ok: false,
+        error: 'DSP worker unavailable',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    }
+
+    final reply = ReceivePort();
+    commandPort.send(<String, Object>{
+      'type': 'sourceConnectNetwork',
+      'host': host,
+      'port': port,
+      'sampleRateHz': sampleRateHz,
+      'protocol': protocol,
+      'sampleType': sampleType,
+      'centerFrequencyHz': centerFrequencyHz,
+      'reply': reply.sendPort,
+    });
+
+    try {
+      final result = await reply.first.timeout(
+        const Duration(seconds: 8),
+      );
+      if (result is Map<Object?, Object?>) {
+        return (
+          ok: result['ok'] == true,
+          error: result['error'] as String? ?? '',
+          sampleRateHz: result['sampleRateHz'] as int? ?? 0,
+          centerFrequencyHz:
+              result['centerFrequencyHz'] as int? ?? 0,
+        );
+      }
+      return (
+        ok: false,
+        error: 'Invalid native Network Source response',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    } on TimeoutException {
+      return (
+        ok: false,
+        error: 'Native Network Source timed out',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    } finally {
+      reply.close();
+    }
+  }
+
   void disconnectSource() {
     _commandPort?.send(<String, Object>{
       'type': 'sourceDisconnect',
@@ -571,6 +638,26 @@ void _sdrDspWorkerMain(SendPort mainPort) {
         final result = processor.openFileSource(
           path: message['path'] as String,
           float32Mode: message['float32Mode'] as bool,
+          centerFrequencyHz:
+              message['centerFrequencyHz'] as int,
+        );
+        if (reply is SendPort) {
+          reply.send(<String, Object>{
+            'ok': result.ok,
+            'error': result.error,
+            'sampleRateHz': result.sampleRateHz,
+            'centerFrequencyHz': result.centerFrequencyHz,
+          });
+        }
+        break;
+      case 'sourceConnectNetwork':
+        final reply = message['reply'];
+        final result = processor.connectNetworkSource(
+          host: message['host'] as String,
+          port: message['port'] as int,
+          sampleRateHz: message['sampleRateHz'] as int,
+          protocol: message['protocol'] as int,
+          sampleType: message['sampleType'] as int,
           centerFrequencyHz:
               message['centerFrequencyHz'] as int,
         );
@@ -883,6 +970,68 @@ class _DspProcessor {
     }
 
     sampleRateHz = source.sampleRateHz;
+    _sourceConnected = true;
+    _sourcePollTimer?.cancel();
+    _sourcePollTimer = Timer.periodic(
+      const Duration(milliseconds: 20),
+      (_) => _pollNativeSource(),
+    );
+    mainPort.send(<String, Object>{
+      'type': 'sourceState',
+      'connected': true,
+      'error': '',
+    });
+    return (
+      ok: true,
+      error: '',
+      sampleRateHz: source.sampleRateHz,
+      centerFrequencyHz: source.centerFrequencyHz,
+    );
+  }
+
+  ({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
+  }) connectNetworkSource({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    required int protocol,
+    required int sampleType,
+    required int centerFrequencyHz,
+  }) {
+    final source = _source;
+    if (source == null) {
+      return (
+        ok: false,
+        error: 'Native SDR++ Network Source is unavailable',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    }
+
+    source.disconnect();
+    final ok = source.connectNetwork(
+      host: host,
+      port: port,
+      sampleRateHz: sampleRateHz,
+      protocol: protocol,
+      sampleType: sampleType,
+      centerFrequencyHz: centerFrequencyHz,
+    );
+    if (!ok) {
+      _sourceConnected = false;
+      return (
+        ok: false,
+        error: source.lastError,
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    }
+
+    this.sampleRateHz = source.sampleRateHz;
     _sourceConnected = true;
     _sourcePollTimer?.cancel();
     _sourcePollTimer = Timer.periodic(
