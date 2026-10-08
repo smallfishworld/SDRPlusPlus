@@ -53,6 +53,9 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   int _nativeRemoteGainDb = 0;
   double _soapyGainDb = 0;
   List<String> _soapyDevices = const <String>[];
+  List<AndroidSdrUsbDevice> _soapyUsbDevices =
+      const <AndroidSdrUsbDevice>[];
+  String? _soapyUsbDeviceName;
   bool _soapyRefreshing = false;
 
   StreamSubscription<Float32List>? _spectrumSubscription;
@@ -2449,12 +2452,23 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     setState(() => _soapyRefreshing = true);
     try {
       final devices = await _client.enumerateSoapy();
+      final usbDevices = await AndroidUsbService.listSdrUsbDevices();
       if (!mounted) {
         return;
       }
       setState(() {
         _soapyDevices = devices;
+        _soapyUsbDevices = usbDevices
+            .where((device) => device.driver != 'rtlsdr')
+            .toList(growable: false);
+        if (_soapyUsbDeviceName != null &&
+            !_soapyUsbDevices.any(
+              (device) => device.deviceName == _soapyUsbDeviceName,
+            )) {
+          _soapyUsbDeviceName = null;
+        }
         if (devices.isNotEmpty &&
+            _soapyUsbDeviceName == null &&
             (_soapyArgsController.text.trim().isEmpty ||
                 _soapyArgsController.text.trim() == 'driver=rtlsdr')) {
           _soapyArgsController.text = devices.first;
@@ -2473,6 +2487,42 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         _soapyDevices.contains(selectedArgs) ? selectedArgs : null;
 
     return <Widget>[
+      if (AndroidUsbService.supported) ...<Widget>[
+        DropdownButtonFormField<String>(
+          initialValue: _soapyUsbDeviceName,
+          decoration: const InputDecoration(
+            labelText: 'Android USB SDR',
+            prefixIcon: Icon(Icons.usb_rounded),
+            border: OutlineInputBorder(),
+          ),
+          items: _soapyUsbDevices
+              .map(
+                (device) => DropdownMenuItem<String>(
+                  value: device.deviceName,
+                  child: Text(
+                    device.label,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              )
+              .toList(growable: false),
+          onChanged: connected
+              ? null
+              : (value) {
+                  setState(() {
+                    _soapyUsbDeviceName = value;
+                    if (value != null) {
+                      final device = _soapyUsbDevices.firstWhere(
+                        (item) => item.deviceName == value,
+                      );
+                      _soapyArgsController.text =
+                          'driver=${device.driver}';
+                    }
+                  });
+                },
+        ),
+        const SizedBox(height: 12),
+      ],
       Row(
         children: <Widget>[
           Expanded(
@@ -2635,17 +2685,36 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
 
     try {
       await _audio.start();
-      await _client.connectSoapy(
-        deviceArgs: args,
-        sampleRateHz: sampleRate,
-        frequencyHz: _frequencyHz,
-        rfBandwidthHz: rfBandwidth,
-        gainDb: _soapyGainDb,
-        agc: _tunerAgc,
-        channel: channel,
-        mode: _mode,
-        bandwidthHz: _bandwidthKhz * 1000,
-      );
+      final usbName = _soapyUsbDeviceName;
+      if (usbName != null) {
+        final device = _soapyUsbDevices.firstWhere(
+          (item) => item.deviceName == usbName,
+        );
+        await _client.connectSoapyUsb(
+          deviceName: usbName,
+          driver: device.driver,
+          sampleRateHz: sampleRate,
+          frequencyHz: _frequencyHz,
+          rfBandwidthHz: rfBandwidth,
+          gainDb: _soapyGainDb,
+          agc: _tunerAgc,
+          channel: channel,
+          mode: _mode,
+          bandwidthHz: _bandwidthKhz * 1000,
+        );
+      } else {
+        await _client.connectSoapy(
+          deviceArgs: args,
+          sampleRateHz: sampleRate,
+          frequencyHz: _frequencyHz,
+          rfBandwidthHz: rfBandwidth,
+          gainDb: _soapyGainDb,
+          agc: _tunerAgc,
+          channel: channel,
+          mode: _mode,
+          bandwidthHz: _bandwidthKhz * 1000,
+        );
+      }
       if (!mounted) {
         return;
       }
