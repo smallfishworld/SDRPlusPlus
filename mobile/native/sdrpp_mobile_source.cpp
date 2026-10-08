@@ -1366,6 +1366,36 @@ int sdrpp_source_connect_network(
         center_frequency_hz);
 }
 
+int sdrpp_source_connect_sdrpp_server(
+    sdrpp_source_t source,
+    const char* host,
+    int port,
+    uint32_t frequency_hz) {
+    if (!source) {
+        return -1;
+    }
+    return asSource(source)->connectSdrppServer(
+        host,
+        port,
+        frequency_hz);
+}
+
+int sdrpp_source_connect_spyserver(
+    sdrpp_source_t source,
+    const char* host,
+    int port,
+    uint32_t sample_rate_hz,
+    uint32_t frequency_hz) {
+    if (!source) {
+        return -1;
+    }
+    return asSource(source)->connectSpyServer(
+        host,
+        port,
+        sample_rate_hz,
+        frequency_hz);
+}
+
 int sdrpp_source_get_kind(sdrpp_source_t source) {
     return source ? asSource(source)->kind() : 0;
 }
