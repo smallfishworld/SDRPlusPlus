@@ -29,6 +29,14 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       TextEditingController(text: '127.0.0.1');
   final TextEditingController _networkPortController =
       TextEditingController(text: '1234');
+  final TextEditingController _sdrppServerHostController =
+      TextEditingController(text: '127.0.0.1');
+  final TextEditingController _sdrppServerPortController =
+      TextEditingController(text: '50000');
+  final TextEditingController _spyServerHostController =
+      TextEditingController(text: '127.0.0.1');
+  final TextEditingController _spyServerPortController =
+      TextEditingController(text: '5555');
 
   StreamSubscription<Float32List>? _spectrumSubscription;
   StreamSubscription<Uint8List>? _audioSubscription;
@@ -239,6 +247,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     _portController.dispose();
     _networkHostController.dispose();
     _networkPortController.dispose();
+    _sdrppServerHostController.dispose();
+    _sdrppServerPortController.dispose();
+    _spyServerHostController.dispose();
+    _spyServerPortController.dispose();
     super.dispose();
   }
 
