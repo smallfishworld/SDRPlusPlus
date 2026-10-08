@@ -13,6 +13,7 @@ add_library(sdrpp_mobile SHARED
     ../../source_modules/hermes_source/src/hermes.cpp
     ../../source_modules/spectran_http_source/src/spectran_http_client.cpp
     ../../core/src/utils/net.cpp
+    ../../core/src/utils/flog.cpp
     ../../core/src/utils/proto/http.cpp
 )
 
