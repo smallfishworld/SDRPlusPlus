@@ -1,4 +1,5 @@
 #include "include/sdrpp_mobile_api.h"
+#include "remote_sources.h"
 
 #include <algorithm>
 #include <array>
@@ -33,6 +34,8 @@ enum class MobileSourceKind : int {
     RtlTcp = 1,
     File = 2,
     Network = 3,
+    SdrppServer = 4,
+    SpyServer = 5,
 };
 
 class MobileSourceRuntime {
@@ -278,6 +281,156 @@ public:
         }
         catch (...) {
             setError("Unknown Network Source error");
+        }
+
+        disconnect();
+        return -1;
+    }
+
+    int connectSdrppServer(
+        const char* host,
+        int port,
+        uint32_t frequencyHz) {
+        if (!engine || !host || !*host ||
+            port <= 0 || port > 65535) {
+            setError("Invalid SDR++ Server parameters");
+            return -1;
+        }
+
+        disconnect();
+
+        try {
+            auto client =
+                std::make_unique<mobile::SdrppServerSourceClient>(
+                    &iqStream);
+
+            iqStream.clearReadStop();
+            iqStream.clearWriteStop();
+            running.store(true);
+            consumerThread =
+                std::thread(&MobileSourceRuntime::consumerLoop, this);
+
+            if (!client->connect(
+                    std::string(host),
+                    port,
+                    frequencyHz)) {
+                setError(client->lastError());
+                running.store(false);
+                iqStream.stopReader();
+                iqStream.stopWriter();
+                if (consumerThread.joinable()) {
+                    consumerThread.join();
+                }
+                iqStream.clearReadStop();
+                iqStream.clearWriteStop();
+                return -1;
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(remoteMutex);
+                sdrppServerClient = std::move(client);
+            }
+
+            const uint32_t actualRate =
+                std::max<uint32_t>(
+                    1000u,
+                    sdrppServerClient->sampleRate());
+            {
+                std::lock_guard<std::mutex> lock(stateMutex);
+                sampleRate = actualRate;
+                frequency = frequencyHz;
+                lastError.clear();
+            }
+            centerFrequency.store(frequencyHz);
+            sdrpp_dsp_set_sample_rate(engine, actualRate);
+            sdrpp_dsp_set_frequency_offset(engine, 0.0f);
+
+            connected.store(true);
+            sourceKind.store(
+                static_cast<int>(MobileSourceKind::SdrppServer));
+            return 0;
+        }
+        catch (const std::exception& e) {
+            setError(e.what());
+        }
+        catch (...) {
+            setError("Unknown SDR++ Server source error");
+        }
+
+        disconnect();
+        return -1;
+    }
+
+    int connectSpyServer(
+        const char* host,
+        int port,
+        uint32_t requestedSampleRate,
+        uint32_t frequencyHz) {
+        if (!engine || !host || !*host ||
+            port <= 0 || port > 65535) {
+            setError("Invalid SpyServer parameters");
+            return -1;
+        }
+
+        disconnect();
+
+        try {
+            auto client =
+                std::make_unique<mobile::SpyServerSourceClient>(
+                    &iqStream);
+
+            iqStream.clearReadStop();
+            iqStream.clearWriteStop();
+            running.store(true);
+            consumerThread =
+                std::thread(&MobileSourceRuntime::consumerLoop, this);
+
+            if (!client->connect(
+                    std::string(host),
+                    port,
+                    requestedSampleRate,
+                    frequencyHz)) {
+                setError(client->lastError());
+                running.store(false);
+                iqStream.stopReader();
+                iqStream.stopWriter();
+                if (consumerThread.joinable()) {
+                    consumerThread.join();
+                }
+                iqStream.clearReadStop();
+                iqStream.clearWriteStop();
+                return -1;
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(remoteMutex);
+                spyServerClient = std::move(client);
+            }
+
+            const uint32_t actualRate =
+                std::max<uint32_t>(
+                    1000u,
+                    spyServerClient->sampleRate());
+            {
+                std::lock_guard<std::mutex> lock(stateMutex);
+                sampleRate = actualRate;
+                frequency = frequencyHz;
+                lastError.clear();
+            }
+            centerFrequency.store(frequencyHz);
+            sdrpp_dsp_set_sample_rate(engine, actualRate);
+            sdrpp_dsp_set_frequency_offset(engine, 0.0f);
+
+            connected.store(true);
+            sourceKind.store(
+                static_cast<int>(MobileSourceKind::SpyServer));
+            return 0;
+        }
+        catch (const std::exception& e) {
+            setError(e.what());
+        }
+        catch (...) {
+            setError("Unknown SpyServer source error");
         }
 
         disconnect();
