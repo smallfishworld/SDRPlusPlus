@@ -59,6 +59,34 @@ typedef _SourceConnectNetworkDart = int Function(
   int,
 );
 
+typedef _SourceConnectSdrppServerNative = Int32 Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  Int32,
+  Uint32,
+);
+typedef _SourceConnectSdrppServerDart = int Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  int,
+  int,
+);
+
+typedef _SourceConnectSpyServerNative = Int32 Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  Int32,
+  Uint32,
+  Uint32,
+);
+typedef _SourceConnectSpyServerDart = int Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  int,
+  int,
+  int,
+);
+
 typedef _SourceVoidNative = Void Function(Pointer<Void>);
 typedef _SourceVoidDart = void Function(Pointer<Void>);
 
@@ -114,6 +142,8 @@ class NativeRtlTcpSourceBridge {
     this._connect,
     this._openFile,
     this._connectNetwork,
+    this._connectSdrppServer,
+    this._connectSpyServer,
     this._getKind,
     this._getSampleRate,
     this._getCenterFrequency,
@@ -145,6 +175,8 @@ class NativeRtlTcpSourceBridge {
   final _SourceConnectDart _connect;
   final _SourceOpenFileDart _openFile;
   final _SourceConnectNetworkDart _connectNetwork;
+  final _SourceConnectSdrppServerDart _connectSdrppServer;
+  final _SourceConnectSpyServerDart _connectSpyServer;
   final _SourceBoolDart _getKind;
   final _SourceGetU32Dart _getSampleRate;
   final _SourceGetU32Dart _getCenterFrequency;
@@ -188,6 +220,16 @@ class NativeRtlTcpSourceBridge {
       final connectNetwork = library.lookupFunction<
           _SourceConnectNetworkNative,
           _SourceConnectNetworkDart>('sdrpp_source_connect_network');
+      final connectSdrppServer = library.lookupFunction<
+          _SourceConnectSdrppServerNative,
+          _SourceConnectSdrppServerDart>(
+        'sdrpp_source_connect_sdrpp_server',
+      );
+      final connectSpyServer = library.lookupFunction<
+          _SourceConnectSpyServerNative,
+          _SourceConnectSpyServerDart>(
+        'sdrpp_source_connect_spyserver',
+      );
       final getKind = library.lookupFunction<
           _SourceBoolNative,
           _SourceBoolDart>('sdrpp_source_get_kind');
@@ -254,6 +296,8 @@ class NativeRtlTcpSourceBridge {
         connect,
         openFile,
         connectNetwork,
+        connectSdrppServer,
+        connectSpyServer,
         getKind,
         getSampleRate,
         getCenterFrequency,
@@ -361,6 +405,54 @@ class NativeRtlTcpSourceBridge {
             protocol,
             sampleType,
             centerFrequencyHz,
+          ) ==
+          0;
+    } finally {
+      calloc.free(nativeHost);
+    }
+  }
+
+  bool connectSdrppServer({
+    required String host,
+    required int port,
+    required int frequencyHz,
+  }) {
+    if (_disposed) {
+      return false;
+    }
+
+    final nativeHost = host.toNativeUtf8();
+    try {
+      return _connectSdrppServer(
+            _source,
+            nativeHost,
+            port,
+            frequencyHz,
+          ) ==
+          0;
+    } finally {
+      calloc.free(nativeHost);
+    }
+  }
+
+  bool connectSpyServer({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    required int frequencyHz,
+  }) {
+    if (_disposed) {
+      return false;
+    }
+
+    final nativeHost = host.toNativeUtf8();
+    try {
+      return _connectSpyServer(
+            _source,
+            nativeHost,
+            port,
+            sampleRateHz,
+            frequencyHz,
           ) ==
           0;
     } finally {
