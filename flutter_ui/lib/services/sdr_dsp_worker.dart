@@ -606,6 +606,128 @@ class SdrDspWorker {
     }
   }
 
+  Future<({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
+  })> connectRfspaceSource({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    required int frequencyHz,
+    required int gainDb,
+  }) =>
+      _connectRemoteNativeSource(
+        type: 'sourceConnectRfspace',
+        arguments: <String, Object>{
+          'host': host,
+          'port': port,
+          'sampleRateHz': sampleRateHz,
+          'frequencyHz': frequencyHz,
+          'gainDb': gainDb,
+        },
+      );
+
+  Future<({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
+  })> connectHermesSource({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    required int frequencyHz,
+    required int gainDb,
+  }) =>
+      _connectRemoteNativeSource(
+        type: 'sourceConnectHermes',
+        arguments: <String, Object>{
+          'host': host,
+          'port': port,
+          'sampleRateHz': sampleRateHz,
+          'frequencyHz': frequencyHz,
+          'gainDb': gainDb,
+        },
+      );
+
+  Future<({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
+  })> connectSpectranHttpSource({
+    required String host,
+    required int port,
+    required int frequencyHz,
+  }) =>
+      _connectRemoteNativeSource(
+        type: 'sourceConnectSpectranHttp',
+        arguments: <String, Object>{
+          'host': host,
+          'port': port,
+          'frequencyHz': frequencyHz,
+        },
+      );
+
+  Future<({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
+  })> _connectRemoteNativeSource({
+    required String type,
+    required Map<String, Object> arguments,
+  }) async {
+    await start();
+    final commandPort = _commandPort;
+    if (commandPort == null) {
+      return (
+        ok: false,
+        error: 'DSP worker unavailable',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    }
+
+    final reply = ReceivePort();
+    commandPort.send(<String, Object>{
+      'type': type,
+      ...arguments,
+      'reply': reply.sendPort,
+    });
+    try {
+      final result = await reply.first.timeout(
+        const Duration(seconds: 12),
+      );
+      if (result is Map<Object?, Object?>) {
+        return (
+          ok: result['ok'] == true,
+          error: result['error'] as String? ?? '',
+          sampleRateHz: result['sampleRateHz'] as int? ?? 0,
+          centerFrequencyHz:
+              result['centerFrequencyHz'] as int? ?? 0,
+        );
+      }
+      return (
+        ok: false,
+        error: 'Invalid native source response',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    } on TimeoutException {
+      return (
+        ok: false,
+        error: 'Native source connection timed out',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    } finally {
+      reply.close();
+    }
+  }
+
   void disconnectSource() {
     _commandPort?.send(<String, Object>{
       'type': 'sourceDisconnect',
@@ -893,6 +1015,58 @@ void _sdrDspWorkerMain(SendPort mainPort) {
           host: message['host'] as String,
           port: message['port'] as int,
           sampleRateHz: message['sampleRateHz'] as int,
+          frequencyHz: message['frequencyHz'] as int,
+        );
+        if (reply is SendPort) {
+          reply.send(<String, Object>{
+            'ok': result.ok,
+            'error': result.error,
+            'sampleRateHz': result.sampleRateHz,
+            'centerFrequencyHz': result.centerFrequencyHz,
+          });
+        }
+        break;
+      case 'sourceConnectRfspace':
+        final reply = message['reply'];
+        final result = processor.connectRfspaceSource(
+          host: message['host'] as String,
+          port: message['port'] as int,
+          sampleRateHz: message['sampleRateHz'] as int,
+          frequencyHz: message['frequencyHz'] as int,
+          gainDb: message['gainDb'] as int,
+        );
+        if (reply is SendPort) {
+          reply.send(<String, Object>{
+            'ok': result.ok,
+            'error': result.error,
+            'sampleRateHz': result.sampleRateHz,
+            'centerFrequencyHz': result.centerFrequencyHz,
+          });
+        }
+        break;
+      case 'sourceConnectHermes':
+        final reply = message['reply'];
+        final result = processor.connectHermesSource(
+          host: message['host'] as String,
+          port: message['port'] as int,
+          sampleRateHz: message['sampleRateHz'] as int,
+          frequencyHz: message['frequencyHz'] as int,
+          gainDb: message['gainDb'] as int,
+        );
+        if (reply is SendPort) {
+          reply.send(<String, Object>{
+            'ok': result.ok,
+            'error': result.error,
+            'sampleRateHz': result.sampleRateHz,
+            'centerFrequencyHz': result.centerFrequencyHz,
+          });
+        }
+        break;
+      case 'sourceConnectSpectranHttp':
+        final reply = message['reply'];
+        final result = processor.connectSpectranHttpSource(
+          host: message['host'] as String,
+          port: message['port'] as int,
           frequencyHz: message['frequencyHz'] as int,
         );
         if (reply is SendPort) {
@@ -1452,6 +1626,123 @@ class _DspProcessor {
       error: '',
       sampleRateHz: source.sampleRateHz,
       centerFrequencyHz: source.centerFrequencyHz,
+    );
+  }
+
+  ({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
+  }) _finishNativeSourceConnect(bool ok) {
+    final source = _source;
+    if (!ok || source == null) {
+      _sourceConnected = false;
+      return (
+        ok: false,
+        error: source?.lastError ?? 'Native source unavailable',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    }
+
+    sampleRateHz = source.sampleRateHz;
+    _sourceConnected = true;
+    _sourcePollTimer?.cancel();
+    _sourcePollTimer = Timer.periodic(
+      const Duration(milliseconds: 20),
+      (_) => _pollNativeSource(),
+    );
+    mainPort.send(<String, Object>{
+      'type': 'sourceState',
+      'connected': true,
+      'error': '',
+    });
+    return (
+      ok: true,
+      error: '',
+      sampleRateHz: source.sampleRateHz,
+      centerFrequencyHz: source.centerFrequencyHz,
+    );
+  }
+
+  ({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
+  }) connectRfspaceSource({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    required int frequencyHz,
+    required int gainDb,
+  }) {
+    final source = _source;
+    if (source == null) {
+      return _finishNativeSourceConnect(false);
+    }
+    source.disconnect();
+    return _finishNativeSourceConnect(
+      source.connectRfspace(
+        host: host,
+        port: port,
+        sampleRateHz: sampleRateHz,
+        frequencyHz: frequencyHz,
+        gainDb: gainDb,
+      ),
+    );
+  }
+
+  ({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
+  }) connectHermesSource({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    required int frequencyHz,
+    required int gainDb,
+  }) {
+    final source = _source;
+    if (source == null) {
+      return _finishNativeSourceConnect(false);
+    }
+    source.disconnect();
+    return _finishNativeSourceConnect(
+      source.connectHermes(
+        host: host,
+        port: port,
+        sampleRateHz: sampleRateHz,
+        frequencyHz: frequencyHz,
+        gainDb: gainDb,
+      ),
+    );
+  }
+
+  ({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
+  }) connectSpectranHttpSource({
+    required String host,
+    required int port,
+    required int frequencyHz,
+  }) {
+    final source = _source;
+    if (source == null) {
+      return _finishNativeSourceConnect(false);
+    }
+    source.disconnect();
+    return _finishNativeSourceConnect(
+      source.connectSpectranHttp(
+        host: host,
+        port: port,
+        frequencyHz: frequencyHz,
+      ),
     );
   }
 
