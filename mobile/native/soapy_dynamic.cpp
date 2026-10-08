@@ -394,8 +394,8 @@ bool SoapyDynamicClient::open(
         return false;
     }
 
-    Device* opened = nullptr;
-    Stream* openedStream = nullptr;
+    SoapyApi::Device* opened = nullptr;
+    SoapyApi::Stream* openedStream = nullptr;
 
     opened = a.makeStr(deviceArgs.c_str());
     if (!opened) {
@@ -554,12 +554,12 @@ void SoapyDynamicClient::close() {
     }
 
     auto& a = api();
-    Device* dev = nullptr;
-    Stream* streamHandle = nullptr;
+    SoapyApi::Device* dev = nullptr;
+    SoapyApi::Stream* streamHandle = nullptr;
     {
         std::lock_guard<std::mutex> lock(mutex);
-        dev = reinterpret_cast<Device*>(device);
-        streamHandle = reinterpret_cast<Stream*>(stream);
+        dev = reinterpret_cast<SoapyApi::Device*>(device);
+        streamHandle = reinterpret_cast<SoapyApi::Stream*>(stream);
         device = nullptr;
         stream = nullptr;
         currentSampleRate = 0;
@@ -583,7 +583,7 @@ bool SoapyDynamicClient::setFrequency(
     uint32_t frequencyHz) {
     auto& a = api();
     std::lock_guard<std::mutex> lock(mutex);
-    auto* dev = reinterpret_cast<Device*>(device);
+    auto* dev = reinterpret_cast<SoapyApi::Device*>(device);
     if (!a.loaded || !dev) {
         return false;
     }
@@ -604,7 +604,7 @@ bool SoapyDynamicClient::setSampleRate(
     uint32_t sampleRateHz) {
     auto& a = api();
     std::lock_guard<std::mutex> lock(mutex);
-    auto* dev = reinterpret_cast<Device*>(device);
+    auto* dev = reinterpret_cast<SoapyApi::Device*>(device);
     if (!a.loaded || !dev) {
         return false;
     }
@@ -626,7 +626,7 @@ bool SoapyDynamicClient::setBandwidth(
     double bandwidthHz) {
     auto& a = api();
     std::lock_guard<std::mutex> lock(mutex);
-    auto* dev = reinterpret_cast<Device*>(device);
+    auto* dev = reinterpret_cast<SoapyApi::Device*>(device);
     if (!a.loaded || !dev) {
         return false;
     }
@@ -645,7 +645,7 @@ bool SoapyDynamicClient::setBandwidth(
 bool SoapyDynamicClient::setGain(double gainDb) {
     auto& a = api();
     std::lock_guard<std::mutex> lock(mutex);
-    auto* dev = reinterpret_cast<Device*>(device);
+    auto* dev = reinterpret_cast<SoapyApi::Device*>(device);
     if (!a.loaded || !dev) {
         return false;
     }
@@ -664,7 +664,7 @@ bool SoapyDynamicClient::setGain(double gainDb) {
 bool SoapyDynamicClient::setAgc(bool enabled) {
     auto& a = api();
     std::lock_guard<std::mutex> lock(mutex);
-    auto* dev = reinterpret_cast<Device*>(device);
+    auto* dev = reinterpret_cast<SoapyApi::Device*>(device);
     if (!a.loaded || !dev) {
         return false;
     }
@@ -719,13 +719,13 @@ std::string SoapyDynamicClient::lastError() const {
 void SoapyDynamicClient::workerLoop() {
     auto& a = api();
 
-    Device* dev = nullptr;
-    Stream* streamHandle = nullptr;
+    SoapyApi::Device* dev = nullptr;
+    SoapyApi::Stream* streamHandle = nullptr;
     std::size_t mtu = 0;
     {
         std::lock_guard<std::mutex> lock(mutex);
-        dev = reinterpret_cast<Device*>(device);
-        streamHandle = reinterpret_cast<Stream*>(stream);
+        dev = reinterpret_cast<SoapyApi::Device*>(device);
+        streamHandle = reinterpret_cast<SoapyApi::Stream*>(stream);
         if (dev && streamHandle) {
             mtu = a.getStreamMtu(dev, streamHandle);
         }
