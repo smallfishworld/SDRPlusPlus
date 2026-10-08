@@ -421,6 +421,130 @@ class SdrDspWorker {
     }
   }
 
+  Future<({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
+  })> connectSdrppServerSource({
+    required String host,
+    required int port,
+    required int frequencyHz,
+  }) async {
+    await start();
+    final commandPort = _commandPort;
+    if (commandPort == null) {
+      return (
+        ok: false,
+        error: 'DSP worker unavailable',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    }
+
+    final reply = ReceivePort();
+    commandPort.send(<String, Object>{
+      'type': 'sourceConnectSdrppServer',
+      'host': host,
+      'port': port,
+      'frequencyHz': frequencyHz,
+      'reply': reply.sendPort,
+    });
+
+    try {
+      final result = await reply.first.timeout(
+        const Duration(seconds: 12),
+      );
+      if (result is Map<Object?, Object?>) {
+        return (
+          ok: result['ok'] == true,
+          error: result['error'] as String? ?? '',
+          sampleRateHz: result['sampleRateHz'] as int? ?? 0,
+          centerFrequencyHz:
+              result['centerFrequencyHz'] as int? ?? 0,
+        );
+      }
+      return (
+        ok: false,
+        error: 'Invalid SDR++ Server response',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    } on TimeoutException {
+      return (
+        ok: false,
+        error: 'SDR++ Server connection timed out',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    } finally {
+      reply.close();
+    }
+  }
+
+  Future<({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
+  })> connectSpyServerSource({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    required int frequencyHz,
+  }) async {
+    await start();
+    final commandPort = _commandPort;
+    if (commandPort == null) {
+      return (
+        ok: false,
+        error: 'DSP worker unavailable',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    }
+
+    final reply = ReceivePort();
+    commandPort.send(<String, Object>{
+      'type': 'sourceConnectSpyServer',
+      'host': host,
+      'port': port,
+      'sampleRateHz': sampleRateHz,
+      'frequencyHz': frequencyHz,
+      'reply': reply.sendPort,
+    });
+
+    try {
+      final result = await reply.first.timeout(
+        const Duration(seconds: 10),
+      );
+      if (result is Map<Object?, Object?>) {
+        return (
+          ok: result['ok'] == true,
+          error: result['error'] as String? ?? '',
+          sampleRateHz: result['sampleRateHz'] as int? ?? 0,
+          centerFrequencyHz:
+              result['centerFrequencyHz'] as int? ?? 0,
+        );
+      }
+      return (
+        ok: false,
+        error: 'Invalid SpyServer response',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    } on TimeoutException {
+      return (
+        ok: false,
+        error: 'SpyServer connection timed out',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    } finally {
+      reply.close();
+    }
+  }
+
   void disconnectSource() {
     _commandPort?.send(<String, Object>{
       'type': 'sourceDisconnect',
@@ -660,6 +784,39 @@ void _sdrDspWorkerMain(SendPort mainPort) {
           sampleType: message['sampleType'] as int,
           centerFrequencyHz:
               message['centerFrequencyHz'] as int,
+        );
+        if (reply is SendPort) {
+          reply.send(<String, Object>{
+            'ok': result.ok,
+            'error': result.error,
+            'sampleRateHz': result.sampleRateHz,
+            'centerFrequencyHz': result.centerFrequencyHz,
+          });
+        }
+        break;
+      case 'sourceConnectSdrppServer':
+        final reply = message['reply'];
+        final result = processor.connectSdrppServerSource(
+          host: message['host'] as String,
+          port: message['port'] as int,
+          frequencyHz: message['frequencyHz'] as int,
+        );
+        if (reply is SendPort) {
+          reply.send(<String, Object>{
+            'ok': result.ok,
+            'error': result.error,
+            'sampleRateHz': result.sampleRateHz,
+            'centerFrequencyHz': result.centerFrequencyHz,
+          });
+        }
+        break;
+      case 'sourceConnectSpyServer':
+        final reply = message['reply'];
+        final result = processor.connectSpyServerSource(
+          host: message['host'] as String,
+          port: message['port'] as int,
+          sampleRateHz: message['sampleRateHz'] as int,
+          frequencyHz: message['frequencyHz'] as int,
         );
         if (reply is SendPort) {
           reply.send(<String, Object>{
@@ -1020,6 +1177,120 @@ class _DspProcessor {
       protocol: protocol,
       sampleType: sampleType,
       centerFrequencyHz: centerFrequencyHz,
+    );
+    if (!ok) {
+      _sourceConnected = false;
+      return (
+        ok: false,
+        error: source.lastError,
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    }
+
+    this.sampleRateHz = source.sampleRateHz;
+    _sourceConnected = true;
+    _sourcePollTimer?.cancel();
+    _sourcePollTimer = Timer.periodic(
+      const Duration(milliseconds: 20),
+      (_) => _pollNativeSource(),
+    );
+    mainPort.send(<String, Object>{
+      'type': 'sourceState',
+      'connected': true,
+      'error': '',
+    });
+    return (
+      ok: true,
+      error: '',
+      sampleRateHz: source.sampleRateHz,
+      centerFrequencyHz: source.centerFrequencyHz,
+    );
+  }
+
+  ({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
+  }) connectSdrppServerSource({
+    required String host,
+    required int port,
+    required int frequencyHz,
+  }) {
+    final source = _source;
+    if (source == null) {
+      return (
+        ok: false,
+        error: 'Native SDR++ Server source is unavailable',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    }
+
+    source.disconnect();
+    final ok = source.connectSdrppServer(
+      host: host,
+      port: port,
+      frequencyHz: frequencyHz,
+    );
+    if (!ok) {
+      _sourceConnected = false;
+      return (
+        ok: false,
+        error: source.lastError,
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    }
+
+    sampleRateHz = source.sampleRateHz;
+    _sourceConnected = true;
+    _sourcePollTimer?.cancel();
+    _sourcePollTimer = Timer.periodic(
+      const Duration(milliseconds: 20),
+      (_) => _pollNativeSource(),
+    );
+    mainPort.send(<String, Object>{
+      'type': 'sourceState',
+      'connected': true,
+      'error': '',
+    });
+    return (
+      ok: true,
+      error: '',
+      sampleRateHz: source.sampleRateHz,
+      centerFrequencyHz: source.centerFrequencyHz,
+    );
+  }
+
+  ({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
+  }) connectSpyServerSource({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    required int frequencyHz,
+  }) {
+    final source = _source;
+    if (source == null) {
+      return (
+        ok: false,
+        error: 'Native SpyServer source is unavailable',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    }
+
+    source.disconnect();
+    final ok = source.connectSpyServer(
+      host: host,
+      port: port,
+      sampleRateHz: sampleRateHz,
+      frequencyHz: frequencyHz,
     );
     if (!ok) {
       _sourceConnected = false;
