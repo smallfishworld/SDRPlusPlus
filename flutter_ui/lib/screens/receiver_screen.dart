@@ -1474,6 +1474,431 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     );
   }
 
+  List<Widget> _radioDetailControls() {
+    final widgets = <Widget>[];
+
+    if (_mode == 'NFM' || _mode == 'WFM') {
+      widgets.addAll(<Widget>[
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('IF Noise Reduction'),
+          subtitle: const Text('Official SDR++ FM IF spectral noise reducer'),
+          value: _fmIfNrEnabled,
+          onChanged: (value) {
+            setState(() => _fmIfNrEnabled = value);
+            _client.setFmIfNr(value, _fmIfNrPreset);
+          },
+        ),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<int>(
+          key: ValueKey<int>(_fmIfNrPreset),
+          initialValue: _fmIfNrPreset,
+          decoration: const InputDecoration(
+            labelText: 'IFNR preset',
+            prefixIcon: Icon(Icons.auto_fix_high_rounded),
+            border: OutlineInputBorder(),
+          ),
+          items: const <DropdownMenuItem<int>>[
+            DropdownMenuItem(value: 0, child: Text('NOAA APT · 9 bins')),
+            DropdownMenuItem(value: 1, child: Text('Voice · 15 bins')),
+            DropdownMenuItem(value: 2, child: Text('Narrow Band · 31 bins')),
+            DropdownMenuItem(value: 3, child: Text('Broadcast · 32 bins')),
+          ],
+          onChanged: _fmIfNrEnabled
+              ? (value) {
+                  if (value == null) {
+                    return;
+                  }
+                  setState(() => _fmIfNrPreset = value);
+                  _client.setFmIfNr(true, value);
+                }
+              : null,
+        ),
+        const SizedBox(height: 12),
+      ]);
+    }
+
+    if (_mode == 'NFM') {
+      widgets.addAll(<Widget>[
+        DropdownButtonFormField<int>(
+          key: ValueKey<String>('ctcss-$_ctcssMode'),
+          initialValue: _ctcssMode,
+          decoration: const InputDecoration(
+            labelText: 'CTCSS',
+            prefixIcon: Icon(Icons.graphic_eq_rounded),
+            border: OutlineInputBorder(),
+          ),
+          items: const <DropdownMenuItem<int>>[
+            DropdownMenuItem(value: 0, child: Text('Off')),
+            DropdownMenuItem(value: 1, child: Text('Decode only')),
+            DropdownMenuItem(value: 2, child: Text('Mute / tone squelch')),
+          ],
+          onChanged: (value) {
+            if (value == null) {
+              return;
+            }
+            setState(() {
+              _ctcssMode = value;
+              if (value == 0) {
+                _detectedCtcssHz = 0;
+              }
+            });
+            _client.setCtcss(value, _ctcssToneIndex);
+          },
+        ),
+        if (_ctcssMode == 2) ...<Widget>[
+          const SizedBox(height: 10),
+          DropdownButtonFormField<int>(
+            key: ValueKey<String>('tone-$_ctcssToneIndex'),
+            initialValue: _ctcssToneIndex,
+            decoration: const InputDecoration(
+              labelText: 'Required CTCSS tone',
+              border: OutlineInputBorder(),
+            ),
+            items: <DropdownMenuItem<int>>[
+              const DropdownMenuItem(value: -2, child: Text('Any valid tone')),
+              for (var i = 0; i < _ctcssTones.length; i++)
+                DropdownMenuItem(
+                  value: i,
+                  child: Text('${_ctcssTones[i].toStringAsFixed(1)} Hz'),
+                ),
+            ],
+            onChanged: (value) {
+              if (value == null) {
+                return;
+              }
+              setState(() => _ctcssToneIndex = value);
+              _client.setCtcss(_ctcssMode, value);
+            },
+          ),
+        ],
+        const SizedBox(height: 8),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(
+            _detectedCtcssHz > 0
+                ? Icons.radio_button_checked_rounded
+                : Icons.radio_button_unchecked_rounded,
+          ),
+          title: const Text('Detected CTCSS'),
+          subtitle: Text(
+            _detectedCtcssHz > 0
+                ? '${_detectedCtcssHz.toStringAsFixed(1)} Hz'
+                : 'No valid tone',
+          ),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('NFM low-pass'),
+          subtitle: const Text('Official FM demodulator low-pass'),
+          value: _nfmLowPass,
+          onChanged: (value) {
+            setState(() => _nfmLowPass = value);
+            _client.setNfmOptions(value);
+          },
+        ),
+      ]);
+    }
+
+    if (_mode == 'WFM') {
+      widgets.addAll(<Widget>[
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Stereo'),
+          subtitle: const Text('19 kHz pilot stereo decoder'),
+          value: _wfmStereo,
+          onChanged: (value) {
+            setState(() => _wfmStereo = value);
+            _client.setWfmOptions(
+              _wfmStereo,
+              _wfmLowPass,
+              _wfmRdsEnabled,
+            );
+          },
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('WFM low-pass'),
+          value: _wfmLowPass,
+          onChanged: (value) {
+            setState(() => _wfmLowPass = value);
+            _client.setWfmOptions(
+              _wfmStereo,
+              _wfmLowPass,
+              _wfmRdsEnabled,
+            );
+          },
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Decode RDS'),
+          subtitle: const Text('57 kHz RDS Program Service / RadioText'),
+          value: _wfmRdsEnabled,
+          onChanged: (value) {
+            setState(() {
+              _wfmRdsEnabled = value;
+              if (!value) {
+                _rdsProgramService = '';
+                _rdsRadioText = '';
+              }
+            });
+            _client.setWfmOptions(
+              _wfmStereo,
+              _wfmLowPass,
+              _wfmRdsEnabled,
+            );
+          },
+        ),
+      ]);
+    }
+
+    if (_mode == 'AM') {
+      widgets.addAll(<Widget>[
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Carrier AGC'),
+          subtitle: const Text('Use carrier rather than audio AGC'),
+          value: _amCarrierAgc,
+          onChanged: (value) {
+            setState(() => _amCarrierAgc = value);
+            _client.setAmAgc(
+              value,
+              _amAgcAttackMs,
+              _amAgcDecayMs,
+            );
+          },
+        ),
+        Text('AGC attack · ${_amAgcAttackMs.toStringAsFixed(0)} ms'),
+        Slider(
+          value: _amAgcAttackMs,
+          min: 1,
+          max: 200,
+          divisions: 199,
+          onChanged: (value) {
+            setState(() => _amAgcAttackMs = value);
+            _client.setAmAgc(
+              _amCarrierAgc,
+              value,
+              _amAgcDecayMs,
+            );
+          },
+        ),
+        Text('AGC decay · ${_amAgcDecayMs.toStringAsFixed(0)} ms'),
+        Slider(
+          value: _amAgcDecayMs,
+          min: 1,
+          max: 20,
+          divisions: 19,
+          onChanged: (value) {
+            setState(() => _amAgcDecayMs = value);
+            _client.setAmAgc(
+              _amCarrierAgc,
+              _amAgcAttackMs,
+              value,
+            );
+          },
+        ),
+      ]);
+    }
+
+    if (_mode == 'USB' || _mode == 'LSB' || _mode == 'DSB') {
+      widgets.addAll(<Widget>[
+        Text('SSB AGC attack · ${_ssbAgcAttackMs.toStringAsFixed(0)} ms'),
+        Slider(
+          value: _ssbAgcAttackMs,
+          min: 1,
+          max: 200,
+          divisions: 199,
+          onChanged: (value) {
+            setState(() => _ssbAgcAttackMs = value);
+            _client.setSsbAgc(value, _ssbAgcDecayMs);
+          },
+        ),
+        Text('SSB AGC decay · ${_ssbAgcDecayMs.toStringAsFixed(0)} ms'),
+        Slider(
+          value: _ssbAgcDecayMs,
+          min: 1,
+          max: 20,
+          divisions: 19,
+          onChanged: (value) {
+            setState(() => _ssbAgcDecayMs = value);
+            _client.setSsbAgc(_ssbAgcAttackMs, value);
+          },
+        ),
+      ]);
+    }
+
+    if (_mode == 'CW') {
+      widgets.addAll(<Widget>[
+        Text('CW tone · $_cwToneHz Hz'),
+        Slider(
+          value: _cwToneHz.toDouble(),
+          min: 250,
+          max: 1250,
+          divisions: 100,
+          onChanged: (value) {
+            final tone = value.round();
+            setState(() => _cwToneHz = tone);
+            _client.setCwOptions(
+              tone,
+              _cwAgcAttackMs,
+              _cwAgcDecayMs,
+            );
+          },
+        ),
+        Text('CW AGC attack · ${_cwAgcAttackMs.toStringAsFixed(0)} ms'),
+        Slider(
+          value: _cwAgcAttackMs,
+          min: 1,
+          max: 200,
+          divisions: 199,
+          onChanged: (value) {
+            setState(() => _cwAgcAttackMs = value);
+            _client.setCwOptions(
+              _cwToneHz,
+              value,
+              _cwAgcDecayMs,
+            );
+          },
+        ),
+        Text('CW AGC decay · ${_cwAgcDecayMs.toStringAsFixed(0)} ms'),
+        Slider(
+          value: _cwAgcDecayMs,
+          min: 1,
+          max: 20,
+          divisions: 19,
+          onChanged: (value) {
+            setState(() => _cwAgcDecayMs = value);
+            _client.setCwOptions(
+              _cwToneHz,
+              _cwAgcAttackMs,
+              value,
+            );
+          },
+        ),
+      ]);
+    }
+
+    return widgets;
+  }
+
+  Future<void> _showModuleCatalog() async {
+    var selectedKind = SdrModuleKind.source;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final modules = SdrModuleCatalog.ofKind(selectedKind);
+          String kindLabel(SdrModuleKind kind) => switch (kind) {
+                SdrModuleKind.source => 'Sources',
+                SdrModuleKind.decoder => 'Decoders',
+                SdrModuleKind.utility => 'Utilities',
+                SdrModuleKind.sink => 'Sinks',
+              };
+          String supportLabel(SdrModuleSupport support) => switch (support) {
+                SdrModuleSupport.active => 'Active',
+                SdrModuleSupport.mapped => 'Mapped',
+                SdrModuleSupport.nativeSdk => 'Native SDK',
+              };
+
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.sizeOf(context).height * 0.82,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Column(
+                  children: <Widget>[
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'SDR++ Sources & Modules',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Every upstream source, decoder, utility and sink is mapped here. Active means the Flutter/Native adapter is already wired; Native SDK entries require the vendor backend to be packaged for the platform.',
+                        style: TextStyle(
+                          color: Color(0xFF8193A7),
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: <Widget>[
+                          for (final kind in SdrModuleKind.values)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: ChoiceChip(
+                                selected: selectedKind == kind,
+                                label: Text(kindLabel(kind)),
+                                onSelected: (_) => setSheetState(
+                                  () => selectedKind = kind,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: modules.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final module = modules[index];
+                          return Card(
+                            child: ListTile(
+                              leading: Icon(
+                                module.support == SdrModuleSupport.active
+                                    ? Icons.check_circle_rounded
+                                    : module.support ==
+                                            SdrModuleSupport.nativeSdk
+                                        ? Icons.memory_rounded
+                                        : Icons.route_rounded,
+                              ),
+                              title: Text(module.name),
+                              subtitle: Text(
+                                '${module.description}\n${module.upstreamPath}',
+                              ),
+                              isThreeLine: true,
+                              trailing: Text(
+                                supportLabel(module.support),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: module.support ==
+                                          SdrModuleSupport.active
+                                      ? const Color(0xFF67E8F9)
+                                      : const Color(0xFF8C9EB2),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _showBandwidthSheet() async {
     const options = <double>[0.5, 0.8, 1.8, 2.4, 2.7, 3.0, 6.0, 8.0, 10.0, 12.5, 15.0, 25.0, 50.0, 100.0, 150.0, 180.0, 200.0];
     final value = await showModalBottomSheet<double>(
