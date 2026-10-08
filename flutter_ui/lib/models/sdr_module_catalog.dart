@@ -362,6 +362,14 @@ class SdrModuleCatalog {
 
     // Utility / plugin-style modules.
     SdrModuleDescriptor(
+      id: 'demo_module',
+      name: 'Demo Module',
+      kind: SdrModuleKind.utility,
+      upstreamPath: 'misc_modules/demo_module',
+      support: SdrModuleSupport.mapped,
+      description: 'Upstream demonstration module used for module-host parity.',
+    ),
+    SdrModuleDescriptor(
       id: 'frequency_manager',
       name: 'Frequency Manager',
       kind: SdrModuleKind.utility,
@@ -453,11 +461,19 @@ class SdrModuleCatalog {
     ),
     SdrModuleDescriptor(
       id: 'new_portaudio_sink',
-      name: 'PortAudio',
+      name: 'New PortAudio',
       kind: SdrModuleKind.sink,
       upstreamPath: 'sink_modules/new_portaudio_sink',
       support: SdrModuleSupport.mapped,
-      description: 'PortAudio desktop sink.',
+      description: 'Current PortAudio desktop sink.',
+    ),
+    SdrModuleDescriptor(
+      id: 'portaudio_sink',
+      name: 'Legacy PortAudio',
+      kind: SdrModuleKind.sink,
+      upstreamPath: 'sink_modules/portaudio_sink',
+      support: SdrModuleSupport.mapped,
+      description: 'Legacy PortAudio sink kept for upstream parity.',
     ),
   ];
 
