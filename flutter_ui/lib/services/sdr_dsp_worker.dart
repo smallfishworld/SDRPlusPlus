@@ -426,6 +426,67 @@ class SdrDspWorker {
     String error,
     int sampleRateHz,
     int centerFrequencyHz,
+  })> connectRtlSdrUsbSource({
+    required int systemFd,
+    required int sampleRateHz,
+    required int frequencyHz,
+  }) async {
+    await start();
+    final commandPort = _commandPort;
+    if (commandPort == null) {
+      return (
+        ok: false,
+        error: 'DSP worker unavailable',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    }
+
+    final reply = ReceivePort();
+    commandPort.send(<String, Object>{
+      'type': 'sourceConnectRtlSdrUsb',
+      'systemFd': systemFd,
+      'sampleRateHz': sampleRateHz,
+      'frequencyHz': frequencyHz,
+      'reply': reply.sendPort,
+    });
+
+    try {
+      final result = await reply.first.timeout(
+        const Duration(seconds: 10),
+      );
+      if (result is Map<Object?, Object?>) {
+        return (
+          ok: result['ok'] == true,
+          error: result['error'] as String? ?? '',
+          sampleRateHz: result['sampleRateHz'] as int? ?? 0,
+          centerFrequencyHz:
+              result['centerFrequencyHz'] as int? ?? 0,
+        );
+      }
+      return (
+        ok: false,
+        error: 'Invalid RTL-SDR USB response',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    } on TimeoutException {
+      return (
+        ok: false,
+        error: 'RTL-SDR USB connection timed out',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    } finally {
+      reply.close();
+    }
+  }
+
+  Future<({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
   })> connectSdrppServerSource({
     required String host,
     required int port,
@@ -784,6 +845,22 @@ void _sdrDspWorkerMain(SendPort mainPort) {
           sampleType: message['sampleType'] as int,
           centerFrequencyHz:
               message['centerFrequencyHz'] as int,
+        );
+        if (reply is SendPort) {
+          reply.send(<String, Object>{
+            'ok': result.ok,
+            'error': result.error,
+            'sampleRateHz': result.sampleRateHz,
+            'centerFrequencyHz': result.centerFrequencyHz,
+          });
+        }
+        break;
+      case 'sourceConnectRtlSdrUsb':
+        final reply = message['reply'];
+        final result = processor.connectRtlSdrUsbSource(
+          systemFd: message['systemFd'] as int,
+          sampleRateHz: message['sampleRateHz'] as int,
+          frequencyHz: message['frequencyHz'] as int,
         );
         if (reply is SendPort) {
           reply.send(<String, Object>{
@@ -1177,6 +1254,62 @@ class _DspProcessor {
       protocol: protocol,
       sampleType: sampleType,
       centerFrequencyHz: centerFrequencyHz,
+    );
+    if (!ok) {
+      _sourceConnected = false;
+      return (
+        ok: false,
+        error: source.lastError,
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    }
+
+    this.sampleRateHz = source.sampleRateHz;
+    _sourceConnected = true;
+    _sourcePollTimer?.cancel();
+    _sourcePollTimer = Timer.periodic(
+      const Duration(milliseconds: 20),
+      (_) => _pollNativeSource(),
+    );
+    mainPort.send(<String, Object>{
+      'type': 'sourceState',
+      'connected': true,
+      'error': '',
+    });
+    return (
+      ok: true,
+      error: '',
+      sampleRateHz: source.sampleRateHz,
+      centerFrequencyHz: source.centerFrequencyHz,
+    );
+  }
+
+  ({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
+  }) connectRtlSdrUsbSource({
+    required int systemFd,
+    required int sampleRateHz,
+    required int frequencyHz,
+  }) {
+    final source = _source;
+    if (source == null) {
+      return (
+        ok: false,
+        error: 'Native RTL-SDR USB source is unavailable',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+      );
+    }
+
+    source.disconnect();
+    final ok = source.connectRtlSdrFd(
+      systemFd: systemFd,
+      sampleRateHz: sampleRateHz,
+      frequencyHz: frequencyHz,
     );
     if (!ok) {
       _sourceConnected = false;
