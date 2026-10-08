@@ -147,6 +147,44 @@ typedef _SourceConnectRtlSdrFdDart = int Function(
   int,
 );
 
+typedef _SourceSoapyAvailableNative = Int32 Function();
+typedef _SourceSoapyAvailableDart = int Function();
+
+typedef _SourceSoapyEnumerateNative = UintPtr Function(
+  Pointer<Utf8>,
+  Pointer<Uint8>,
+  UintPtr,
+);
+typedef _SourceSoapyEnumerateDart = int Function(
+  Pointer<Utf8>,
+  Pointer<Uint8>,
+  int,
+);
+
+typedef _SourceConnectSoapyNative = Int32 Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  Uint32,
+  Uint32,
+  Double,
+  Double,
+  Int32,
+  Uint32,
+);
+typedef _SourceConnectSoapyDart = int Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  int,
+  int,
+  double,
+  double,
+  int,
+  int,
+);
+
+typedef _SourceSetDoubleNative = Int32 Function(Pointer<Void>, Double);
+typedef _SourceSetDoubleDart = int Function(Pointer<Void>, double);
+
 typedef _SourceVoidNative = Void Function(Pointer<Void>);
 typedef _SourceVoidDart = void Function(Pointer<Void>);
 
@@ -208,6 +246,12 @@ class NativeRtlTcpSourceBridge {
     this._connectRfspace,
     this._connectHermes,
     this._connectSpectranHttp,
+    this._soapyAvailable,
+    this._soapyEnumerate,
+    this._connectSoapy,
+    this._getSoapyDriver,
+    this._getSoapyHardware,
+    this._setRfBandwidth,
     this._getKind,
     this._getSampleRate,
     this._getCenterFrequency,
@@ -245,6 +289,12 @@ class NativeRtlTcpSourceBridge {
   final _SourceConnectRfspaceDart _connectRfspace;
   final _SourceConnectHermesDart _connectHermes;
   final _SourceConnectSpectranHttpDart _connectSpectranHttp;
+  final _SourceSoapyAvailableDart _soapyAvailable;
+  final _SourceSoapyEnumerateDart _soapyEnumerate;
+  final _SourceConnectSoapyDart _connectSoapy;
+  final _SourceErrorDart _getSoapyDriver;
+  final _SourceErrorDart _getSoapyHardware;
+  final _SourceSetDoubleDart _setRfBandwidth;
   final _SourceBoolDart _getKind;
   final _SourceGetU32Dart _getSampleRate;
   final _SourceGetU32Dart _getCenterFrequency;
@@ -318,6 +368,24 @@ class NativeRtlTcpSourceBridge {
           _SourceConnectSpectranHttpDart>(
         'sdrpp_source_connect_spectran_http',
       );
+      final soapyAvailable = library.lookupFunction<
+          _SourceSoapyAvailableNative,
+          _SourceSoapyAvailableDart>('sdrpp_source_soapy_available');
+      final soapyEnumerate = library.lookupFunction<
+          _SourceSoapyEnumerateNative,
+          _SourceSoapyEnumerateDart>('sdrpp_source_soapy_enumerate');
+      final connectSoapy = library.lookupFunction<
+          _SourceConnectSoapyNative,
+          _SourceConnectSoapyDart>('sdrpp_source_connect_soapy');
+      final getSoapyDriver = library.lookupFunction<
+          _SourceErrorNative,
+          _SourceErrorDart>('sdrpp_source_get_soapy_driver');
+      final getSoapyHardware = library.lookupFunction<
+          _SourceErrorNative,
+          _SourceErrorDart>('sdrpp_source_get_soapy_hardware');
+      final setRfBandwidth = library.lookupFunction<
+          _SourceSetDoubleNative,
+          _SourceSetDoubleDart>('sdrpp_source_set_rf_bandwidth');
       final getKind = library.lookupFunction<
           _SourceBoolNative,
           _SourceBoolDart>('sdrpp_source_get_kind');
@@ -390,6 +458,12 @@ class NativeRtlTcpSourceBridge {
         connectRfspace,
         connectHermes,
         connectSpectranHttp,
+        soapyAvailable,
+        soapyEnumerate,
+        connectSoapy,
+        getSoapyDriver,
+        getSoapyHardware,
+        setRfBandwidth,
         getKind,
         getSampleRate,
         getCenterFrequency,
@@ -642,6 +716,94 @@ class NativeRtlTcpSourceBridge {
       calloc.free(nativeHost);
     }
   }
+
+  bool get soapyAvailable =>
+      !_disposed && _soapyAvailable() != 0;
+
+  List<String> enumerateSoapy({String filter = ''}) {
+    if (_disposed || _soapyAvailable() == 0) {
+      return const <String>[];
+    }
+    const capacity = 16384;
+    final out = calloc<Uint8>(capacity);
+    final nativeFilter = filter.toNativeUtf8();
+    try {
+      final count = _soapyEnumerate(
+        nativeFilter,
+        out,
+        capacity,
+      );
+      if (count <= 0) {
+        return const <String>[];
+      }
+      return out
+          .cast<Utf8>()
+          .toDartString()
+          .split('\n')
+          .map((value) => value.trim())
+          .where((value) => value.isNotEmpty)
+          .toList(growable: false);
+    } finally {
+      calloc.free(nativeFilter);
+      calloc.free(out);
+    }
+  }
+
+  bool connectSoapy({
+    required String deviceArgs,
+    required int sampleRateHz,
+    required int frequencyHz,
+    required double rfBandwidthHz,
+    required double gainDb,
+    required bool agc,
+    int channel = 0,
+  }) {
+    if (_disposed) {
+      return false;
+    }
+    final nativeArgs = deviceArgs.toNativeUtf8();
+    try {
+      return _connectSoapy(
+            _source,
+            nativeArgs,
+            sampleRateHz,
+            frequencyHz,
+            rfBandwidthHz,
+            gainDb,
+            agc ? 1 : 0,
+            channel,
+          ) ==
+          0;
+    } finally {
+      calloc.free(nativeArgs);
+    }
+  }
+
+  void setRfBandwidth(double bandwidthHz) {
+    if (!_disposed) {
+      _setRfBandwidth(_source, bandwidthHz);
+    }
+  }
+
+  String _readSourceString(_SourceErrorDart fn) {
+    if (_disposed) {
+      return '';
+    }
+    const capacity = 256;
+    final buffer = calloc<Uint8>(capacity);
+    try {
+      final count = fn(_source, buffer, capacity);
+      if (count <= 0) {
+        return '';
+      }
+      return buffer.cast<Utf8>().toDartString();
+    } finally {
+      calloc.free(buffer);
+    }
+  }
+
+  String get soapyDriver => _readSourceString(_getSoapyDriver);
+  String get soapyHardware => _readSourceString(_getSoapyHardware);
 
   int get kind => _disposed ? 0 : _getKind(_source);
   int get sampleRateHz =>
