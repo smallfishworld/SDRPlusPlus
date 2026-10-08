@@ -22,6 +22,7 @@ enum ReceiverSourceKind {
   rfspace,
   hermes,
   spectranHttp,
+  soapy,
 }
 
 class RtlTcpClient {
@@ -63,6 +64,8 @@ class RtlTcpClient {
   bool _nativeSourceActive = false;
   ReceiverSourceKind _sourceKind = ReceiverSourceKind.rtlTcp;
   String _filePath = '';
+  String _soapyDriver = '';
+  String _soapyHardware = '';
 
   RtlTcpConnectionState get state => _state;
   String get lastError => _lastError;
@@ -73,6 +76,8 @@ class RtlTcpClient {
   bool get usingNativeSource => _nativeSourceActive;
   ReceiverSourceKind get sourceKind => _sourceKind;
   String get filePath => _filePath;
+  String get soapyDriver => _soapyDriver;
+  String get soapyHardware => _soapyHardware;
 
   Stream<Float32List> get spectrumStream => _dsp.spectrumStream;
   Stream<Uint8List> get audioStream => _dsp.audioStream;
@@ -368,6 +373,71 @@ class RtlTcpClient {
     _setState(RtlTcpConnectionState.connected);
   }
 
+  Future<List<String>> enumerateSoapy({
+    String filter = '',
+  }) async {
+    await _dsp.start();
+    return _dsp.enumerateSoapy(filter: filter);
+  }
+
+  Future<void> connectSoapy({
+    required String deviceArgs,
+    required int sampleRateHz,
+    required int frequencyHz,
+    required double rfBandwidthHz,
+    required double gainDb,
+    required bool agc,
+    int channel = 0,
+    String mode = 'AM',
+    double bandwidthHz = 10000,
+  }) async {
+    await disconnect();
+    await _dsp.start();
+
+    _setState(RtlTcpConnectionState.connecting);
+    _lastError = '';
+    _sourceKind = ReceiverSourceKind.soapy;
+    _filePath = '';
+    _soapyDriver = '';
+    _soapyHardware = '';
+    _mode = mode;
+    _bandwidthHz = bandwidthHz;
+
+    _dsp.setMode(_mode);
+    _dsp.setBandwidth(_bandwidthHz);
+
+    final result = await _dsp.connectSoapySource(
+      deviceArgs: deviceArgs,
+      sampleRateHz: sampleRateHz,
+      frequencyHz: frequencyHz,
+      rfBandwidthHz: rfBandwidthHz,
+      gainDb: gainDb,
+      agc: agc,
+      channel: channel,
+    );
+
+    if (!result.ok) {
+      _lastError = result.error;
+      _nativeSourceActive = false;
+      _setState(RtlTcpConnectionState.error);
+      throw StateError(
+        result.error.isEmpty
+            ? 'Could not open SoapySDR device'
+            : result.error,
+      );
+    }
+
+    _nativeSourceActive = true;
+    _sampleRateHz = result.sampleRateHz;
+    _frequencyHz = result.centerFrequencyHz;
+    _soapyDriver = result.driver;
+    _soapyHardware = result.hardware;
+    _dsp.setSampleRate(_sampleRateHz);
+    _dsp.setMode(_mode);
+    _dsp.setBandwidth(_bandwidthHz);
+    _setState(RtlTcpConnectionState.connected);
+  }
+
   Future<void> connectRtlSdrUsb({
     required String deviceName,
     int sampleRateHz = 1024000,
@@ -530,6 +600,10 @@ class RtlTcpClient {
     _socket = null;
     _iqBuffer = BytesBuilder(copy: false);
     _dsp.reset();
+    if (_sourceKind != ReceiverSourceKind.soapy) {
+      _soapyDriver = '';
+      _soapyHardware = '';
+    }
     if (_sourceKind == ReceiverSourceKind.rtlSdrUsb) {
       await AndroidUsbService.closeRtlSdr();
     }
@@ -634,6 +708,12 @@ class RtlTcpClient {
       _dsp.sourceSetBiasTee(enabled);
     } else if (_state == RtlTcpConnectionState.connected) {
       _sendCommand(14, enabled ? 1 : 0);
+    }
+  }
+
+  void setRfBandwidth(double bandwidthHz) {
+    if (_nativeSourceActive) {
+      _dsp.sourceSetRfBandwidth(bandwidthHz);
     }
   }
 
