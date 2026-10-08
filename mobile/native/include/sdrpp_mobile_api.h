@@ -175,6 +175,20 @@ SDRPP_MOBILE_API int sdrpp_source_open_file(
     int float32_mode,
     uint32_t center_frequency_hz);
 
+/*
+ * Upstream network_source semantics:
+ * protocol: 0 TCP client, 1 UDP
+ * sample_type: 0 int8 IQ, 1 int16 IQ, 2 int32 IQ, 3 float32 IQ
+ */
+SDRPP_MOBILE_API int sdrpp_source_connect_network(
+    sdrpp_source_t source,
+    const char* host,
+    int port,
+    uint32_t sample_rate_hz,
+    int protocol,
+    int sample_type,
+    uint32_t center_frequency_hz);
+
 SDRPP_MOBILE_API int sdrpp_source_get_kind(
     sdrpp_source_t source);
 SDRPP_MOBILE_API uint32_t sdrpp_source_get_sample_rate(
