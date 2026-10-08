@@ -60,6 +60,28 @@ public:
         rebuildLocked();
     }
 
+    void setFrequencyOffset(float offsetHz) {
+        std::lock_guard<std::mutex> lock(mutex);
+        const double halfRate =
+            static_cast<double>(inputSampleRate) / 2.0;
+        frequencyOffsetHz = std::clamp<double>(
+            static_cast<double>(offsetHz),
+            -halfRate,
+            halfRate);
+        if (channelXlator) {
+            channelXlator->setOffset(
+                -frequencyOffsetHz,
+                inputSampleRate);
+            channelXlator->reset();
+        }
+        if (channelXlator) {
+            channelXlator->reset();
+        }
+        if (rfResampler) {
+            rfResampler->reset();
+        }
+    }
+
     void reset() {
         std::lock_guard<std::mutex> lock(mutex);
         if (rfResampler) {
@@ -158,10 +180,20 @@ public:
                       static_cast<double>(inputSampleRate))) + 4096;
         ensureIfCapacity(std::max<size_t>(expectedIf, complexCount / 2 + 4096));
 
+        const dsp::complex_t* rfData = rfInput.data();
+        if (channelXlator && std::fabs(frequencyOffsetHz) > 0.01) {
+            ensureTranslatedCapacity(complexCount);
+            channelXlator->process(
+                static_cast<int>(complexCount),
+                rfInput.data(),
+                translatedBuffer.data());
+            rfData = translatedBuffer.data();
+        }
+
         int ifCount = rfResampler
             ? rfResampler->process(
                   static_cast<int>(complexCount),
-                  rfInput.data(),
+                  rfData,
                   ifBuffer.data())
             : 0;
 
@@ -591,7 +623,16 @@ private:
         rdsDemod.reset();
         ssb.reset();
         cw.reset();
+        channelXlator.reset();
         rfResampler.reset();
+
+        channelXlator =
+            std::make_unique<dsp::channel::FrequencyXlator>();
+        channelXlator->init(
+            nullptr,
+            -frequencyOffsetHz,
+            inputSampleRate);
+        channelXlator->out.free();
 
         rfResampler = std::make_unique<
             dsp::multirate::RationalResampler<dsp::complex_t>>();
@@ -764,6 +805,7 @@ private:
         // Working buffers. They grow on demand without being recreated for
         // every TCP packet.
         ensureInputCapacity(32768);
+        ensureTranslatedCapacity(32768);
         ensureIfCapacity(32768);
         ensureDemodCapacity(32768);
         ensureAudioCapacity(65536);
@@ -797,6 +839,12 @@ private:
     void ensureInputCapacity(size_t count) {
         if (rfInput.size() < count) {
             rfInput.resize(count);
+        }
+    }
+
+    void ensureTranslatedCapacity(size_t count) {
+        if (translatedBuffer.size() < count) {
+            translatedBuffer.resize(count);
         }
     }
 
@@ -906,6 +954,7 @@ private:
     double ifSampleRate = 50000.0;
     sdrpp_mode_t mode = SDRPP_MODE_AM;
     float bandwidth = 10000.0f;
+    double frequencyOffsetHz = 0.0;
 
     bool squelchEnabled = false;
     float squelchLevelDb = -82.0f;
@@ -932,6 +981,7 @@ private:
     bool wfmLowPass = true;
     bool wfmRdsEnabled = true;
 
+    std::unique_ptr<dsp::channel::FrequencyXlator> channelXlator;
     std::unique_ptr<dsp::multirate::RationalResampler<dsp::complex_t>>
         rfResampler;
     std::unique_ptr<dsp::noise_reduction::NoiseBlanker> noiseBlanker;
@@ -958,6 +1008,7 @@ private:
     std::unique_ptr<dsp::filter::FIR<dsp::stereo_t, float>> stereoHighPass;
 
     std::vector<dsp::complex_t> rfInput;
+    std::vector<dsp::complex_t> translatedBuffer;
     std::vector<dsp::complex_t> ifBuffer;
     std::vector<float> demodBuffer;
     std::vector<float> audioBuffer;
@@ -1035,6 +1086,21 @@ int sdrpp_dsp_set_bandwidth(
     }
     try {
         asEngine(engine)->setBandwidth(bandwidth_hz);
+        return 0;
+    }
+    catch (...) {
+        return -1;
+    }
+}
+
+int sdrpp_dsp_set_frequency_offset(
+    sdrpp_engine_t engine,
+    float offset_hz) {
+    if (!engine) {
+        return -1;
+    }
+    try {
+        asEngine(engine)->setFrequencyOffset(offset_hz);
         return 0;
     }
     catch (...) {
