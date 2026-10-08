@@ -66,8 +66,17 @@ class SdrModuleCatalog {
       name: 'File Source',
       kind: SdrModuleKind.source,
       upstreamPath: 'source_modules/file_source',
-      support: SdrModuleSupport.mapped,
-      description: 'Replay IQ recordings from local files.',
+      support: SdrModuleSupport.active,
+      description:
+          'Native replay of SDR++ compatible IQ WAV files with in-file VFO tuning.',
+      capabilities: <String>[
+        '16-bit stereo IQ WAV',
+        'Float32 IQ mode',
+        'sample-rate detection',
+        'center-frequency filename detection',
+        'VFO offset tuning',
+        'looped playback',
+      ],
     ),
     SdrModuleDescriptor(
       id: 'audio_source',
