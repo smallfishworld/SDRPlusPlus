@@ -1170,6 +1170,372 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     }
   }
 
+  Widget _sourceSettingsCard(bool connected) {
+    final isRtlTcp = _selectedSourceKind == ReceiverSourceKind.rtlTcp;
+    final backendText = connected
+        ? (_client.usingNativeSource
+            ? (_client.sourceKind == ReceiverSourceKind.rtlTcp
+                ? 'Backend: official SDR++ native rtl_tcp client'
+                : 'Backend: official SDR++ native File Source')
+            : 'Backend: Dart compatibility transport')
+        : 'Backend: native SDR++ source runtime';
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const Text(
+              'Source',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 5),
+            const Text(
+              'Select an SDR++ source adapter. RTL-TCP and File Source are now active native implementations.',
+              style: TextStyle(color: Color(0xFF7F91A5)),
+            ),
+            const SizedBox(height: 12),
+            SegmentedButton<ReceiverSourceKind>(
+              segments: const <ButtonSegment<ReceiverSourceKind>>[
+                ButtonSegment(
+                  value: ReceiverSourceKind.rtlTcp,
+                  icon: Icon(Icons.lan_rounded),
+                  label: Text('RTL-TCP'),
+                ),
+                ButtonSegment(
+                  value: ReceiverSourceKind.file,
+                  icon: Icon(Icons.audio_file_rounded),
+                  label: Text('IQ File'),
+                ),
+              ],
+              selected: <ReceiverSourceKind>{_selectedSourceKind},
+              onSelectionChanged: connected
+                  ? null
+                  : (value) {
+                      setState(() => _selectedSourceKind = value.first);
+                    },
+            ),
+            const SizedBox(height: 8),
+            Text(
+              backendText,
+              style: const TextStyle(
+                color: Color(0xFF67E8F9),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 18),
+            if (isRtlTcp) ..._rtlTcpSourceControls(connected),
+            if (!isRtlTcp) ..._fileSourceControls(connected),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: connected ? _disconnect : _connectSelectedSource,
+              icon: Icon(
+                connected
+                    ? Icons.link_off_rounded
+                    : isRtlTcp
+                        ? Icons.link_rounded
+                        : Icons.play_arrow_rounded,
+              ),
+              label: Text(
+                connected
+                    ? 'Disconnect'
+                    : isRtlTcp
+                        ? 'Connect to receiver'
+                        : 'Open IQ file',
+              ),
+            ),
+            if (_connectionError.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 12),
+              Text(
+                _connectionError,
+                style: const TextStyle(
+                  color: Color(0xFFFF7A8D),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _rtlTcpSourceControls(bool connected) {
+    return <Widget>[
+      TextField(
+        controller: _hostController,
+        enabled: !connected,
+        decoration: const InputDecoration(
+          labelText: 'Host',
+          prefixIcon: Icon(Icons.dns_outlined),
+          border: OutlineInputBorder(),
+        ),
+      ),
+      const SizedBox(height: 12),
+      TextField(
+        controller: _portController,
+        enabled: !connected,
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(
+          labelText: 'Port',
+          prefixIcon: Icon(Icons.lan_outlined),
+          border: OutlineInputBorder(),
+        ),
+      ),
+      const SizedBox(height: 12),
+      DropdownButtonFormField<int>(
+        key: ValueKey<int>(_sampleRateHz),
+        initialValue: _sampleRateHz,
+        decoration: const InputDecoration(
+          labelText: 'Sample rate',
+          prefixIcon: Icon(Icons.speed_rounded),
+          border: OutlineInputBorder(),
+        ),
+        items: const <DropdownMenuItem<int>>[
+          DropdownMenuItem(
+            value: 1024000,
+            child: Text('1.024 MSPS'),
+          ),
+          DropdownMenuItem(
+            value: 2048000,
+            child: Text('2.048 MSPS'),
+          ),
+          DropdownMenuItem(
+            value: 2400000,
+            child: Text('2.400 MSPS'),
+          ),
+        ],
+        onChanged: (value) {
+          if (value == null) {
+            return;
+          }
+          setState(() => _sampleRateHz = value);
+          _client.setSampleRate(value);
+        },
+      ),
+      const SizedBox(height: 10),
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Tuner AGC'),
+        subtitle: const Text('Automatic tuner gain control'),
+        value: _tunerAgc,
+        onChanged: (value) {
+          setState(() => _tunerAgc = value);
+          _client.setTunerAgc(value);
+          if (!value) {
+            _client.setGainDb(_manualGainDb);
+          }
+        },
+      ),
+      if (!_tunerAgc) ...<Widget>[
+        Text(
+          'Manual gain  ${_manualGainDb.toStringAsFixed(1)} dB',
+        ),
+        Slider(
+          value: _manualGainDb,
+          min: -9.9,
+          max: 19.7,
+          divisions: 296,
+          label: '${_manualGainDb.toStringAsFixed(1)} dB',
+          onChanged: (value) {
+            setState(() => _manualGainDb = value);
+            _client.setGainDb(value);
+          },
+        ),
+      ],
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('RTL AGC'),
+        subtitle: const Text('RTL2832 digital AGC'),
+        value: _rtlAgc,
+        onChanged: (value) {
+          setState(() => _rtlAgc = value);
+          _client.setRtlAgc(value);
+        },
+      ),
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Bias-T'),
+        subtitle: const Text(
+          'Enable antenna bias power when supported',
+        ),
+        value: _biasTee,
+        onChanged: (value) {
+          setState(() => _biasTee = value);
+          _client.setBiasTee(value);
+        },
+      ),
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Offset tuning'),
+        value: _offsetTuning,
+        onChanged: (value) {
+          setState(() => _offsetTuning = value);
+          _client.setOffsetTuning(value);
+        },
+      ),
+      const SizedBox(height: 8),
+      DropdownButtonFormField<int>(
+        key: ValueKey<String>('direct-$_directSampling'),
+        initialValue: _directSampling,
+        decoration: const InputDecoration(
+          labelText: 'Direct sampling',
+          prefixIcon: Icon(Icons.swap_vert_rounded),
+          border: OutlineInputBorder(),
+        ),
+        items: const <DropdownMenuItem<int>>[
+          DropdownMenuItem(value: 0, child: Text('Disabled')),
+          DropdownMenuItem(value: 1, child: Text('I branch')),
+          DropdownMenuItem(value: 2, child: Text('Q branch')),
+        ],
+        onChanged: (value) {
+          if (value == null) {
+            return;
+          }
+          setState(() => _directSampling = value);
+          _client.setDirectSampling(value);
+        },
+      ),
+      const SizedBox(height: 14),
+      Text('Frequency correction  $_ppm ppm'),
+      Slider(
+        value: _ppm.toDouble(),
+        min: -100,
+        max: 100,
+        divisions: 200,
+        label: '$_ppm ppm',
+        onChanged: (value) {
+          final ppm = value.round();
+          setState(() => _ppm = ppm);
+          _client.setPpm(ppm);
+        },
+      ),
+    ];
+  }
+
+  List<Widget> _fileSourceControls(bool connected) {
+    final fileName = _iqFilePath.isEmpty
+        ? 'No IQ WAV selected'
+        : _iqFilePath.split(RegExp(r'[/\\]')).last;
+
+    return <Widget>[
+      OutlinedButton.icon(
+        onPressed: connected ? null : _pickIqFile,
+        icon: const Icon(Icons.folder_open_rounded),
+        label: Text(
+          fileName,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      const SizedBox(height: 8),
+      const Text(
+        'Supports SDR++ File Source compatible stereo 16-bit IQ WAV files. Float32 IQ can be enabled for files recorded in that format. If the filename contains “145100000Hz”, the center frequency is detected automatically.',
+        style: TextStyle(
+          color: Color(0xFF7F91A5),
+          fontSize: 12,
+          height: 1.4,
+        ),
+      ),
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Float32 IQ'),
+        subtitle: const Text(
+          'Match the upstream SDR++ File Source Float32 mode',
+        ),
+        value: _iqFileFloat32,
+        onChanged: connected
+            ? null
+            : (value) => setState(() => _iqFileFloat32 = value),
+      ),
+      if (connected &&
+          _client.sourceKind == ReceiverSourceKind.file)
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.info_outline_rounded),
+          title: Text(
+            '${(_sampleRateHz / 1000000).toStringAsFixed(3)} MSPS',
+          ),
+          subtitle: Text(
+            'File center: ${(_client.frequencyHz / 1000000).toStringAsFixed(6)} MHz',
+          ),
+        ),
+    ];
+  }
+
+  Future<void> _pickIqFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const <String>['wav'],
+      allowMultiple: false,
+    );
+    final path = result?.files.single.path;
+    if (path == null || path.isEmpty || !mounted) {
+      return;
+    }
+    setState(() => _iqFilePath = path);
+  }
+
+  Future<void> _connectSelectedSource() async {
+    if (_selectedSourceKind == ReceiverSourceKind.file) {
+      await _connectFileSource();
+    } else {
+      await _connect();
+    }
+  }
+
+  Future<void> _connectFileSource() async {
+    if (_iqFilePath.isEmpty) {
+      await _pickIqFile();
+      if (_iqFilePath.isEmpty) {
+        return;
+      }
+    }
+
+    setState(() {
+      _connectionError = '';
+      _waterfall.clear();
+    });
+
+    try {
+      await _audio.start();
+      _audio.setVolume(_volume);
+      await _client.openFile(
+        path: _iqFilePath,
+        float32Mode: _iqFileFloat32,
+        centerFrequencyHz: 0,
+        mode: _mode,
+        bandwidthHz: _bandwidthKhz * 1000,
+      );
+      if (mounted) {
+        setState(() {
+          _sampleRateHz = _client.sampleRateHz;
+          _frequencyHz = _client.frequencyHz;
+          _scanFrequencyHz = _frequencyHz;
+          _tab = 0;
+        });
+      }
+      _client.setSquelch(_squelchEnabled, _squelchDb);
+      _client.setNoiseBlanker(
+        _noiseBlankerEnabled,
+        _noiseBlankerLevel,
+      );
+      _client.setHighPass(_highPassEnabled);
+      _client.setDeemphasis(_deemphasisUs);
+      _applyRadioDetailOptions();
+    } catch (error) {
+      if (mounted) {
+        final message = _client.lastError.isNotEmpty
+            ? _client.lastError
+            : error.toString();
+        setState(() => _connectionError = message);
+      }
+    }
+  }
+
   Widget _settingsPage() {
     final connected = _connectionState == RtlTcpConnectionState.connected;
     return Padding(
@@ -1181,205 +1547,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
           Expanded(
             child: ListView(
               children: <Widget>[
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        const Text(
-                          'RTL-TCP receiver',
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 5),
-                        const Text(
-                          'Network SDR source shared across Android, iOS, Windows and macOS.',
-                          style: TextStyle(color: Color(0xFF7F91A5)),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          connected
-                              ? (_client.usingNativeSource
-                                  ? 'Backend: official SDR++ native rtl_tcp client'
-                                  : 'Backend: Dart compatibility transport')
-                              : 'Backend: native source preferred, Dart fallback available',
-                          style: const TextStyle(
-                            color: Color(0xFF67E8F9),
-                            fontSize: 12,
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        TextField(
-                          controller: _hostController,
-                          decoration: const InputDecoration(
-                            labelText: 'Host',
-                            prefixIcon: Icon(Icons.dns_outlined),
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _portController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'Port',
-                            prefixIcon: Icon(Icons.lan_outlined),
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<int>(
-                          initialValue: _sampleRateHz,
-                          decoration: const InputDecoration(
-                            labelText: 'Sample rate',
-                            prefixIcon: Icon(Icons.speed_rounded),
-                            border: OutlineInputBorder(),
-                          ),
-                          items: const <DropdownMenuItem<int>>[
-                            DropdownMenuItem(
-                              value: 1024000,
-                              child: Text('1.024 MSPS'),
-                            ),
-                            DropdownMenuItem(
-                              value: 2048000,
-                              child: Text('2.048 MSPS'),
-                            ),
-                            DropdownMenuItem(
-                              value: 2400000,
-                              child: Text('2.400 MSPS'),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            if (value == null) {
-                              return;
-                            }
-                            setState(() => _sampleRateHz = value);
-                            _client.setSampleRate(value);
-                          },
-                        ),
-                        const SizedBox(height: 10),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Tuner AGC'),
-                          subtitle: const Text('Automatic tuner gain control'),
-                          value: _tunerAgc,
-                          onChanged: (value) {
-                            setState(() => _tunerAgc = value);
-                            _client.setTunerAgc(value);
-                            if (!value) {
-                              _client.setGainDb(_manualGainDb);
-                            }
-                          },
-                        ),
-                        if (!_tunerAgc) ...<Widget>[
-                          Text('Manual gain  ${_manualGainDb.toStringAsFixed(1)} dB'),
-                          Slider(
-                            value: _manualGainDb,
-                            min: -9.9,
-                            max: 19.7,
-                            divisions: 296,
-                            label: '${_manualGainDb.toStringAsFixed(1)} dB',
-                            onChanged: (value) {
-                              setState(() => _manualGainDb = value);
-                              _client.setGainDb(value);
-                            },
-                          ),
-                        ],
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('RTL AGC'),
-                          subtitle: const Text('RTL2832 digital AGC'),
-                          value: _rtlAgc,
-                          onChanged: (value) {
-                            setState(() => _rtlAgc = value);
-                            _client.setRtlAgc(value);
-                          },
-                        ),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Bias-T'),
-                          subtitle: const Text('Enable antenna bias power when supported'),
-                          value: _biasTee,
-                          onChanged: (value) {
-                            setState(() => _biasTee = value);
-                            _client.setBiasTee(value);
-                          },
-                        ),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Offset tuning'),
-                          value: _offsetTuning,
-                          onChanged: (value) {
-                            setState(() => _offsetTuning = value);
-                            _client.setOffsetTuning(value);
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                        DropdownButtonFormField<int>(
-                          initialValue: _directSampling,
-                          decoration: const InputDecoration(
-                            labelText: 'Direct sampling',
-                            prefixIcon: Icon(Icons.swap_vert_rounded),
-                            border: OutlineInputBorder(),
-                          ),
-                          items: const <DropdownMenuItem<int>>[
-                            DropdownMenuItem(value: 0, child: Text('Disabled')),
-                            DropdownMenuItem(value: 1, child: Text('I branch')),
-                            DropdownMenuItem(value: 2, child: Text('Q branch')),
-                          ],
-                          onChanged: (value) {
-                            if (value == null) {
-                              return;
-                            }
-                            setState(() => _directSampling = value);
-                            _client.setDirectSampling(value);
-                          },
-                        ),
-                        const SizedBox(height: 14),
-                        Text('Frequency correction  $_ppm ppm'),
-                        Slider(
-                          value: _ppm.toDouble(),
-                          min: -100,
-                          max: 100,
-                          divisions: 200,
-                          label: '$_ppm ppm',
-                          onChanged: (value) {
-                            final ppm = value.round();
-                            setState(() => _ppm = ppm);
-                            _client.setPpm(ppm);
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                        FilledButton.icon(
-                          onPressed: connected ? _disconnect : _connect,
-                          icon: Icon(
-                            connected
-                                ? Icons.link_off_rounded
-                                : Icons.link_rounded,
-                          ),
-                          label: Text(
-                            connected
-                                ? 'Disconnect'
-                                : 'Connect to receiver',
-                          ),
-                        ),
-                        if (_connectionError.isNotEmpty) ...<Widget>[
-                          const SizedBox(height: 12),
-                          Text(
-                            _connectionError,
-                            style: const TextStyle(
-                              color: Color(0xFFFF7A8D),
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
+                _sourceSettingsCard(connected),
                 const SizedBox(height: 12),
                 Card(
                   child: Padding(
