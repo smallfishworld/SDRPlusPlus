@@ -1295,6 +1295,27 @@ size_t sdrpp_dsp_process_u8(
     }
 }
 
+size_t sdrpp_dsp_process_cf32(
+    sdrpp_engine_t engine,
+    const float* iq_interleaved,
+    size_t complex_samples,
+    int16_t* out_pcm,
+    size_t out_capacity_samples) {
+    if (!engine) {
+        return 0;
+    }
+    try {
+        return asEngine(engine)->processComplex(
+            iq_interleaved,
+            complex_samples,
+            out_pcm,
+            out_capacity_samples);
+    }
+    catch (...) {
+        return 0;
+    }
+}
+
 uint32_t sdrpp_dsp_output_sample_rate(void) {
     return static_cast<uint32_t>(kOutputSampleRate);
 }
