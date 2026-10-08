@@ -12,9 +12,30 @@ enum RtlTcpConnectionState {
 }
 
 class RtlTcpClient {
+  RtlTcpClient() {
+    _nativeStateSubscription = _dsp.sourceStateStream.listen((state) {
+      if (!_nativeSourceActive) {
+        return;
+      }
+      if (state.connected) {
+        _setState(RtlTcpConnectionState.connected);
+        return;
+      }
+      _lastError = state.error;
+      _nativeSourceActive = false;
+      _setState(
+        state.error.isEmpty
+            ? RtlTcpConnectionState.disconnected
+            : RtlTcpConnectionState.error,
+      );
+    });
+  }
+
   final SdrDspWorker _dsp = SdrDspWorker();
   Socket? _socket;
   StreamSubscription<Uint8List>? _subscription;
+  StreamSubscription<({bool connected, String error})>?
+      _nativeStateSubscription;
   final _stateController = StreamController<RtlTcpConnectionState>.broadcast();
   BytesBuilder _iqBuffer = BytesBuilder(copy: false);
   static const int _iqBatchBytes = 64 * 1024;
@@ -26,6 +47,7 @@ class RtlTcpClient {
   int _sampleRateHz = 1024000;
   String _mode = 'AM';
   double _bandwidthHz = 10000;
+  bool _nativeSourceActive = false;
 
   RtlTcpConnectionState get state => _state;
   String get lastError => _lastError;
@@ -69,6 +91,21 @@ class RtlTcpClient {
       bandwidthHz: _bandwidthHz,
     );
 
+    final nativeResult = await _dsp.connectRtlTcpSource(
+      host: host,
+      port: port,
+      sampleRateHz: _sampleRateHz,
+      frequencyHz: _frequencyHz,
+    );
+    if (nativeResult.ok) {
+      _nativeSourceActive = true;
+      _setState(RtlTcpConnectionState.connected);
+      return;
+    }
+
+    // Keep the old Dart transport as a compatibility fallback for platforms
+    // where the native source runtime is not packaged yet.
+    _nativeSourceActive = false;
     try {
       final socket = await Socket.connect(
         host,
@@ -105,6 +142,11 @@ class RtlTcpClient {
   }
 
   Future<void> disconnect() async {
+    if (_nativeSourceActive) {
+      _dsp.disconnectSource();
+      _nativeSourceActive = false;
+    }
+
     final subscription = _subscription;
     _subscription = null;
     await subscription?.cancel();
@@ -117,20 +159,21 @@ class RtlTcpClient {
 
   void setFrequency(int frequencyHz) {
     _frequencyHz = frequencyHz;
-    if (_state == RtlTcpConnectionState.connected) {
+    if (_nativeSourceActive) {
+      _dsp.sourceSetFrequency(frequencyHz);
+    } else if (_state == RtlTcpConnectionState.connected) {
       _sendCommand(1, frequencyHz);
+      _iqBuffer = BytesBuilder(copy: false);
+      _dsp.reset();
     }
-    // Drop IQ already accumulated for the old channel and reset the complete
-    // DSP state after issuing the tuner command. The UI also debounces an
-    // audio-stream restart after interactive retuning.
-    _iqBuffer = BytesBuilder(copy: false);
-    _dsp.reset();
   }
 
   void setSampleRate(int sampleRateHz) {
     _sampleRateHz = sampleRateHz;
     _dsp.setSampleRate(sampleRateHz);
-    if (_state == RtlTcpConnectionState.connected) {
+    if (_nativeSourceActive) {
+      _dsp.sourceSetSampleRate(sampleRateHz);
+    } else if (_state == RtlTcpConnectionState.connected) {
       _sendCommand(2, sampleRateHz);
     }
   }
@@ -146,50 +189,67 @@ class RtlTcpClient {
   }
 
   void setTunerAgc(bool enabled) {
-    if (_state == RtlTcpConnectionState.connected) {
+    if (_nativeSourceActive) {
+      _dsp.sourceSetTunerAgc(enabled);
+    } else if (_state == RtlTcpConnectionState.connected) {
       _sendCommand(3, enabled ? 0 : 1);
     }
   }
 
   void setGainDb(double gainDb) {
-    if (_state == RtlTcpConnectionState.connected) {
+    if (_nativeSourceActive) {
+      _dsp.sourceSetTunerAgc(false);
+      _dsp.sourceSetGainDb(gainDb);
+    } else if (_state == RtlTcpConnectionState.connected) {
       _sendCommand(3, 1);
       _sendCommand(4, (gainDb * 10).round());
     }
   }
 
   void setGainIndex(int index) {
-    if (_state == RtlTcpConnectionState.connected) {
+    if (_nativeSourceActive) {
+      _dsp.sourceSetGainIndex(index);
+    } else if (_state == RtlTcpConnectionState.connected) {
       _sendCommand(13, index);
     }
   }
 
   void setPpm(int ppm) {
-    if (_state == RtlTcpConnectionState.connected) {
+    if (_nativeSourceActive) {
+      _dsp.sourceSetPpm(ppm);
+    } else if (_state == RtlTcpConnectionState.connected) {
       _sendCommand(5, ppm);
     }
   }
 
   void setRtlAgc(bool enabled) {
-    if (_state == RtlTcpConnectionState.connected) {
+    if (_nativeSourceActive) {
+      _dsp.sourceSetRtlAgc(enabled);
+    } else if (_state == RtlTcpConnectionState.connected) {
       _sendCommand(8, enabled ? 1 : 0);
     }
   }
 
   void setDirectSampling(int mode) {
-    if (_state == RtlTcpConnectionState.connected) {
+    if (_nativeSourceActive) {
+      _dsp.sourceSetDirectSampling(mode.clamp(0, 2).toInt());
+    } else if (_state == RtlTcpConnectionState.connected) {
       _sendCommand(9, mode.clamp(0, 2).toInt());
     }
   }
 
   void setOffsetTuning(bool enabled) {
-    if (_state == RtlTcpConnectionState.connected) {
+    if (_nativeSourceActive) {
+      _dsp.sourceSetOffsetTuning(enabled);
+    } else if (_state == RtlTcpConnectionState.connected) {
       _sendCommand(10, enabled ? 1 : 0);
     }
   }
 
   void setBiasTee(bool enabled) {
-    if (_state == RtlTcpConnectionState.connected) {
+    if (_nativeSourceActive) {
+      _dsp.sourceSetBiasTee(enabled);
+    } else if (_state == RtlTcpConnectionState.connected) {
       _sendCommand(14, enabled ? 1 : 0);
     }
   }
@@ -294,6 +354,8 @@ class RtlTcpClient {
 
   Future<void> dispose() async {
     await disconnect();
+    await _nativeStateSubscription?.cancel();
+    _nativeStateSubscription = null;
     await _dsp.dispose();
     await _stateController.close();
   }
