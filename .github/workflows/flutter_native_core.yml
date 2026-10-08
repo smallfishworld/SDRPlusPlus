@@ -147,6 +147,19 @@ jobs:
               'set_target_properties(SoapySDR PROPERTIES VERSION ${SOAPY_SDR_LIBVER})',
               '# mobile APK uses unversioned SoapySDR filename')
           lib.write_text(text)
+
+          # Android bionic does not provide POSIX glob(). The receiver loads
+          # packaged Soapy modules explicitly with dlopen(), so the standard
+          # filesystem module scan can be a no-op on Android.
+          modules = Path("soapy/lib/Modules.in.cpp")
+          text = modules.read_text()
+          text = text.replace(
+              '#include <dlfcn.h>\n#include <glob.h>',
+              '#include <dlfcn.h>\n#ifndef __ANDROID__\n#include <glob.h>\n#endif')
+          text = text.replace(
+              '#ifdef _WIN32\n    //http://www.cplusplus.com/forum/windows/17745/',
+              '#if defined(__ANDROID__)\n    (void)path;\n#elif defined(_WIN32)\n    //http://www.cplusplus.com/forum/windows/17745/')
+          modules.write_text(text)
           PY
 
           cmake             -S soapy             -B soapy-build             -G Ninja             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake"             -DANDROID_ABI=arm64-v8a             -DANDROID_PLATFORM=android-24             -DCMAKE_BUILD_TYPE=Release             -DCMAKE_INSTALL_PREFIX="$SOAPY_PREFIX"
