@@ -483,6 +483,20 @@ public:
             }
         }
 
+        std::unique_ptr<mobile::SdrppServerSourceClient> sdrppRemote;
+        std::unique_ptr<mobile::SpyServerSourceClient> spyRemote;
+        {
+            std::lock_guard<std::mutex> lock(remoteMutex);
+            sdrppRemote = std::move(sdrppServerClient);
+            spyRemote = std::move(spyServerClient);
+        }
+        if (sdrppRemote) {
+            sdrppRemote->close();
+        }
+        if (spyRemote) {
+            spyRemote->close();
+        }
+
         iqStream.stopWriter();
         iqStream.stopReader();
 
@@ -533,6 +547,16 @@ public:
             std::lock_guard<std::mutex> lock(clientMutex);
             return rtlClient && rtlClient->isOpen();
         }
+        if (kindValue == MobileSourceKind::SdrppServer) {
+            std::lock_guard<std::mutex> lock(remoteMutex);
+            return sdrppServerClient &&
+                sdrppServerClient->isOpen();
+        }
+        if (kindValue == MobileSourceKind::SpyServer) {
+            std::lock_guard<std::mutex> lock(remoteMutex);
+            return spyServerClient &&
+                spyServerClient->isOpen();
+        }
         return false;
     }
 
@@ -552,6 +576,30 @@ public:
             sdrpp_dsp_set_frequency_offset(
                 engine,
                 static_cast<float>(offset));
+            sdrpp_dsp_reset(engine);
+            return 0;
+        }
+
+        if (kindValue == MobileSourceKind::SdrppServer) {
+            std::lock_guard<std::mutex> lock(remoteMutex);
+            if (!sdrppServerClient ||
+                !sdrppServerClient->setFrequency(value)) {
+                return -1;
+            }
+            centerFrequency.store(value);
+            sdrpp_dsp_set_frequency_offset(engine, 0.0f);
+            sdrpp_dsp_reset(engine);
+            return 0;
+        }
+
+        if (kindValue == MobileSourceKind::SpyServer) {
+            std::lock_guard<std::mutex> lock(remoteMutex);
+            if (!spyServerClient ||
+                !spyServerClient->setFrequency(value)) {
+                return -1;
+            }
+            centerFrequency.store(value);
+            sdrpp_dsp_set_frequency_offset(engine, 0.0f);
             sdrpp_dsp_reset(engine);
             return 0;
         }
@@ -579,6 +627,26 @@ public:
                 std::max<uint32_t>(1000u, value));
             return 0;
         }
+        if (kindValue == MobileSourceKind::SdrppServer) {
+            // The SDR++ Server controls its exported sample rate.
+            return -1;
+        }
+        if (kindValue == MobileSourceKind::SpyServer) {
+            std::lock_guard<std::mutex> lock(remoteMutex);
+            if (!spyServerClient ||
+                !spyServerClient->setSampleRate(value)) {
+                return -1;
+            }
+            const uint32_t actual =
+                spyServerClient->sampleRate();
+            {
+                std::lock_guard<std::mutex> stateLock(stateMutex);
+                sampleRate = actual;
+            }
+            sdrpp_dsp_set_sample_rate(engine, actual);
+            sdrpp_dsp_reset(engine);
+            return 0;
+        }
         {
             std::lock_guard<std::mutex> lock(stateMutex);
             sampleRate = value;
@@ -601,6 +669,16 @@ public:
 
     int setGainIndex(int value) {
         gainIndex = std::clamp(value, 0, 1000);
+        const auto kindValue =
+            static_cast<MobileSourceKind>(sourceKind.load());
+        if (kindValue == MobileSourceKind::SpyServer) {
+            std::lock_guard<std::mutex> lock(remoteMutex);
+            return spyServerClient &&
+                spyServerClient->setGain(
+                    static_cast<uint32_t>(gainIndex))
+                ? 0
+                : -1;
+        }
         return withClient([&](rtltcp::Client& client) {
             client.setGainIndex(gainIndex);
         });
@@ -911,6 +989,56 @@ private:
         connected.store(false);
     }
 
+    void syncRemoteState() {
+        const auto kindValue =
+            static_cast<MobileSourceKind>(sourceKind.load());
+        uint32_t remoteRate = 0;
+        bool remoteOpen = true;
+        std::string remoteError;
+
+        {
+            std::lock_guard<std::mutex> lock(remoteMutex);
+            if (kindValue == MobileSourceKind::SdrppServer &&
+                sdrppServerClient) {
+                remoteRate = sdrppServerClient->sampleRate();
+                remoteOpen = sdrppServerClient->isOpen();
+                remoteError = sdrppServerClient->lastError();
+            }
+            else if (kindValue == MobileSourceKind::SpyServer &&
+                     spyServerClient) {
+                remoteRate = spyServerClient->sampleRate();
+                remoteOpen = spyServerClient->isOpen();
+                remoteError = spyServerClient->lastError();
+            }
+            else {
+                return;
+            }
+        }
+
+        if (remoteRate >= 1000u) {
+            uint32_t previous = 0;
+            {
+                std::lock_guard<std::mutex> lock(stateMutex);
+                previous = sampleRate;
+                sampleRate = remoteRate;
+                if (!remoteError.empty()) {
+                    lastError = remoteError;
+                }
+            }
+            if (previous != remoteRate) {
+                sdrpp_dsp_set_sample_rate(engine, remoteRate);
+                sdrpp_dsp_reset(engine);
+            }
+        }
+
+        if (!remoteOpen) {
+            connected.store(false);
+            if (!remoteError.empty()) {
+                setError(remoteError);
+            }
+        }
+    }
+
     template <typename F>
     int withClient(F&& fn) {
         std::lock_guard<std::mutex> lock(clientMutex);
@@ -945,6 +1073,8 @@ private:
                 iqStream.flush();
                 continue;
             }
+
+            syncRemoteState();
 
             uint32_t currentSampleRate;
             {
@@ -1132,6 +1262,12 @@ private:
     std::shared_ptr<net::Socket> networkSocket;
     int networkProtocol = 0;
     int networkSampleType = 1;
+
+    mutable std::mutex remoteMutex;
+    std::unique_ptr<mobile::SdrppServerSourceClient>
+        sdrppServerClient;
+    std::unique_ptr<mobile::SpyServerSourceClient>
+        spyServerClient;
 
     mutable std::mutex stateMutex;
     uint32_t sampleRate = 1024000;
