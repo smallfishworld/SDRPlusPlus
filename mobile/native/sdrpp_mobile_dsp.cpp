@@ -86,11 +86,13 @@ public:
         if (stereoDeemphasis) {
             stereoDeemphasis->reset();
         }
+        if (fmIfNr) {
+            fmIfNr->reset();
+        }
 
-        // SSB/CW blocks do not expose a complete public reset method. Rebuild
-        // only those modes on retune so their translator/AGC history cannot
-        // leak across channels.
-        if (ssb || cw) {
+        // SSB/CW and CTCSS detector state are easiest to reset by rebuilding
+        // their official SDR++ blocks after a retune.
+        if (ssb || cw || (ctcssMode != 0 && ctcss)) {
             rebuildLocked();
         }
     }
