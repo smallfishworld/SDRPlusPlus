@@ -35,6 +35,21 @@ typedef _SetHighPassDart = int Function(Pointer<Void>, int);
 typedef _SetDeemphasisNative = Int32 Function(Pointer<Void>, Int32);
 typedef _SetDeemphasisDart = int Function(Pointer<Void>, int);
 
+typedef _GetRdsNative = Int32 Function(
+  Pointer<Void>,
+  Pointer<Uint8>,
+  UintPtr,
+  Pointer<Uint8>,
+  UintPtr,
+);
+typedef _GetRdsDart = int Function(
+  Pointer<Void>,
+  Pointer<Uint8>,
+  int,
+  Pointer<Uint8>,
+  int,
+);
+
 typedef _ResetNative = Void Function(Pointer<Void>);
 typedef _ResetDart = void Function(Pointer<Void>);
 
@@ -67,6 +82,7 @@ class NativeDspBridge {
     this._setNoiseBlanker,
     this._setHighPass,
     this._setDeemphasis,
+    this._getRds,
     this._reset,
     this._process,
     this.backendName,
@@ -87,6 +103,7 @@ class NativeDspBridge {
   final _SetNoiseBlankerDart _setNoiseBlanker;
   final _SetHighPassDart _setHighPass;
   final _SetDeemphasisDart _setDeemphasis;
+  final _GetRdsDart _getRds;
   final _ResetDart _reset;
   final _ProcessDart _process;
   final String backendName;
@@ -128,6 +145,9 @@ class NativeDspBridge {
       final setDeemphasis = library.lookupFunction<
           _SetDeemphasisNative,
           _SetDeemphasisDart>('sdrpp_dsp_set_deemphasis');
+      final getRds = library.lookupFunction<
+          _GetRdsNative,
+          _GetRdsDart>('sdrpp_dsp_get_rds');
       final reset = library.lookupFunction<_ResetNative, _ResetDart>(
         'sdrpp_dsp_reset',
       );
@@ -157,6 +177,7 @@ class NativeDspBridge {
         setNoiseBlanker,
         setHighPass,
         setDeemphasis,
+        getRds,
         reset,
         process,
         backendNameFn().toDartString(),
@@ -232,6 +253,35 @@ class NativeDspBridge {
   void setDeemphasis(int modeUs) {
     if (!_disposed) {
       _setDeemphasis(_handle, modeUs);
+    }
+  }
+
+  ({String programService, String radioText})? getRds() {
+    if (_disposed) {
+      return null;
+    }
+
+    const capacity = 160;
+    final ps = calloc<Uint8>(capacity);
+    final rt = calloc<Uint8>(capacity);
+    try {
+      final valid = _getRds(
+        _handle,
+        ps,
+        capacity,
+        rt,
+        capacity,
+      );
+      if (valid == 0) {
+        return null;
+      }
+      return (
+        programService: ps.cast<Utf8>().toDartString().trim(),
+        radioText: rt.cast<Utf8>().toDartString().trim(),
+      );
+    } finally {
+      calloc.free(ps);
+      calloc.free(rt);
     }
   }
 
