@@ -17,7 +17,10 @@
 #include <dsp/demod/ssb.h>
 #include <dsp/demod/cw.h>
 #include <dsp/filter/deephasis.h>
+#include <dsp/filter/fir.h>
+#include <dsp/taps/high_pass.h>
 #include <dsp/multirate/rational_resampler.h>
+#include <dsp/noise_reduction/noise_blanker.h>
 #include <dsp/noise_reduction/power_squelch.h>
 
 namespace {
@@ -121,6 +124,10 @@ public:
             return 0;
         }
 
+        if (noiseBlankerEnabled && noiseBlanker) {
+            noiseBlanker->process(ifCount, ifBuffer.data(), ifBuffer.data());
+        }
+
         if (squelchEnabled && powerSquelch) {
             powerSquelch->process(ifCount, ifBuffer.data(), ifBuffer.data());
         }
@@ -158,12 +165,21 @@ public:
                 return 0;
             }
 
-            if (stereoDeemphasis) {
+            if (stereoDeemphasis && deemphasisUs > 0) {
                 stereoDeemphasis->process(
                     audioFrames,
                     stereoData,
                     stereoAudioBuffer2.data());
                 stereoData = stereoAudioBuffer2.data();
+            }
+
+            if (highPassEnabled && stereoHighPass) {
+                ensureStereoAudioCapacity(static_cast<size_t>(audioFrames));
+                stereoHighPass->process(
+                    audioFrames,
+                    stereoData,
+                    stereoAudioBuffer.data());
+                stereoData = stereoAudioBuffer.data();
             }
 
             const size_t frameCapacity = outCapacity / 2;
@@ -208,6 +224,15 @@ public:
             return 0;
         }
 
+        if (highPassEnabled && monoHighPass) {
+            ensureAudioCapacity(static_cast<size_t>(audioCount));
+            monoHighPass->process(
+                audioCount,
+                audioData,
+                audioBuffer2.data());
+            audioData = audioBuffer2.data();
+        }
+
         const size_t frameCapacity = outCapacity / 2;
         const size_t writeFrames = std::min<size_t>(
             static_cast<size_t>(audioCount),
@@ -230,6 +255,31 @@ public:
         squelchLevelDb = levelDb;
         if (powerSquelch) {
             powerSquelch->setLevel(squelchLevelDb);
+        }
+    }
+
+    void setNoiseBlanker(bool enabled, float level) {
+        std::lock_guard<std::mutex> lock(mutex);
+        noiseBlankerEnabled = enabled;
+        noiseBlankerLevel = std::clamp(level, 1.0f, 10.0f);
+        if (noiseBlanker) {
+            noiseBlanker->setLevel(noiseBlankerLevel);
+        }
+    }
+
+    void setHighPass(bool enabled) {
+        std::lock_guard<std::mutex> lock(mutex);
+        highPassEnabled = enabled;
+    }
+
+    void setDeemphasis(int modeUs) {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (modeUs != 0 && modeUs != 22 && modeUs != 50 && modeUs != 75) {
+            modeUs = 50;
+        }
+        deemphasisUs = modeUs;
+        if (stereoDeemphasis && deemphasisUs > 0) {
+            stereoDeemphasis->setTau(static_cast<double>(deemphasisUs) * 1e-6);
         }
     }
 
@@ -298,6 +348,9 @@ private:
 
         stereoDeemphasis.reset();
         stereoAudioResampler.reset();
+        monoHighPass.reset();
+        stereoHighPass.reset();
+        noiseBlanker.reset();
         powerSquelch.reset();
         audioResampler.reset();
         am.reset();
@@ -313,6 +366,11 @@ private:
         // The bridge calls process() directly; its threaded output stream is
         // therefore not needed.
         rfResampler->out.free();
+
+        noiseBlanker =
+            std::make_unique<dsp::noise_reduction::NoiseBlanker>();
+        noiseBlanker->init(nullptr, 500.0 / ifSampleRate, noiseBlankerLevel);
+        noiseBlanker->out.free();
 
         powerSquelch =
             std::make_unique<dsp::noise_reduction::PowerSquelch>();
@@ -407,7 +465,10 @@ private:
 
             stereoDeemphasis =
                 std::make_unique<dsp::filter::Deemphasis<dsp::stereo_t>>();
-            stereoDeemphasis->init(nullptr, 50e-6, kOutputSampleRate);
+            stereoDeemphasis->init(
+                nullptr,
+                static_cast<double>(std::max(1, deemphasisUs)) * 1e-6,
+                kOutputSampleRate);
             stereoDeemphasis->out.free();
         }
         else if (ifSampleRate != kOutputSampleRate) {
@@ -416,6 +477,20 @@ private:
             audioResampler->init(nullptr, ifSampleRate, kOutputSampleRate);
             audioResampler->out.free();
         }
+
+        auto hpTaps = dsp::taps::highPass(
+            300.0,
+            100.0,
+            kOutputSampleRate);
+        monoHighPass =
+            std::make_unique<dsp::filter::FIR<float, float>>();
+        monoHighPass->init(nullptr, hpTaps);
+        monoHighPass->out.free();
+
+        stereoHighPass =
+            std::make_unique<dsp::filter::FIR<dsp::stereo_t, float>>();
+        stereoHighPass->init(nullptr, hpTaps);
+        stereoHighPass->out.free();
 
         // Working buffers. They grow on demand without being recreated for
         // every TCP packet.
@@ -497,9 +572,14 @@ private:
 
     bool squelchEnabled = false;
     float squelchLevelDb = -82.0f;
+    bool noiseBlankerEnabled = false;
+    float noiseBlankerLevel = 10.0f;
+    bool highPassEnabled = false;
+    int deemphasisUs = 50;
 
     std::unique_ptr<dsp::multirate::RationalResampler<dsp::complex_t>>
         rfResampler;
+    std::unique_ptr<dsp::noise_reduction::NoiseBlanker> noiseBlanker;
     std::unique_ptr<dsp::noise_reduction::PowerSquelch> powerSquelch;
 
     std::unique_ptr<dsp::demod::AM<float>> am;
@@ -515,6 +595,8 @@ private:
         stereoAudioResampler;
     std::unique_ptr<dsp::filter::Deemphasis<dsp::stereo_t>>
         stereoDeemphasis;
+    std::unique_ptr<dsp::filter::FIR<float, float>> monoHighPass;
+    std::unique_ptr<dsp::filter::FIR<dsp::stereo_t, float>> stereoHighPass;
 
     std::vector<dsp::complex_t> rfInput;
     std::vector<dsp::complex_t> ifBuffer;
@@ -612,6 +694,52 @@ int sdrpp_dsp_set_squelch(
     }
 }
 
+int sdrpp_dsp_set_noise_blanker(
+    sdrpp_engine_t engine,
+    int enabled,
+    float level) {
+    if (!engine) {
+        return -1;
+    }
+    try {
+        asEngine(engine)->setNoiseBlanker(enabled != 0, level);
+        return 0;
+    }
+    catch (...) {
+        return -1;
+    }
+}
+
+int sdrpp_dsp_set_high_pass(
+    sdrpp_engine_t engine,
+    int enabled) {
+    if (!engine) {
+        return -1;
+    }
+    try {
+        asEngine(engine)->setHighPass(enabled != 0);
+        return 0;
+    }
+    catch (...) {
+        return -1;
+    }
+}
+
+int sdrpp_dsp_set_deemphasis(
+    sdrpp_engine_t engine,
+    int mode_us) {
+    if (!engine) {
+        return -1;
+    }
+    try {
+        asEngine(engine)->setDeemphasis(mode_us);
+        return 0;
+    }
+    catch (...) {
+        return -1;
+    }
+}
+
 void sdrpp_dsp_reset(sdrpp_engine_t engine) {
     if (!engine) {
         return;
@@ -649,7 +777,7 @@ uint32_t sdrpp_dsp_output_sample_rate(void) {
 }
 
 const char* sdrpp_dsp_backend_name(void) {
-    return "SDR++ official DSP core bridge v2 · WFM stereo";
+    return "SDR++ official DSP core bridge v3 · WFM stereo + radio post-processing";
 }
 
 } // extern "C"
