@@ -27,8 +27,24 @@ typedef _SourceConnectDart = int Function(
   int,
 );
 
+typedef _SourceOpenFileNative = Int32 Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  Int32,
+  Uint32,
+);
+typedef _SourceOpenFileDart = int Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  int,
+  int,
+);
+
 typedef _SourceVoidNative = Void Function(Pointer<Void>);
 typedef _SourceVoidDart = void Function(Pointer<Void>);
+
+typedef _SourceGetU32Native = Uint32 Function(Pointer<Void>);
+typedef _SourceGetU32Dart = int Function(Pointer<Void>);
 
 typedef _SourceBoolNative = Int32 Function(Pointer<Void>);
 typedef _SourceBoolDart = int Function(Pointer<Void>);
@@ -77,6 +93,10 @@ class NativeRtlTcpSourceBridge {
     this._source,
     this._destroy,
     this._connect,
+    this._openFile,
+    this._getKind,
+    this._getSampleRate,
+    this._getCenterFrequency,
     this._disconnect,
     this._isConnected,
     this._setFrequency,
@@ -103,6 +123,10 @@ class NativeRtlTcpSourceBridge {
   final Pointer<Void> _source;
   final _SourceDestroyDart _destroy;
   final _SourceConnectDart _connect;
+  final _SourceOpenFileDart _openFile;
+  final _SourceBoolDart _getKind;
+  final _SourceGetU32Dart _getSampleRate;
+  final _SourceGetU32Dart _getCenterFrequency;
   final _SourceVoidDart _disconnect;
   final _SourceBoolDart _isConnected;
   final _SourceSetU32Dart _setFrequency;
@@ -137,6 +161,18 @@ class NativeRtlTcpSourceBridge {
       final connect = library.lookupFunction<
           _SourceConnectNative,
           _SourceConnectDart>('sdrpp_source_connect_rtl_tcp');
+      final openFile = library.lookupFunction<
+          _SourceOpenFileNative,
+          _SourceOpenFileDart>('sdrpp_source_open_file');
+      final getKind = library.lookupFunction<
+          _SourceBoolNative,
+          _SourceBoolDart>('sdrpp_source_get_kind');
+      final getSampleRate = library.lookupFunction<
+          _SourceGetU32Native,
+          _SourceGetU32Dart>('sdrpp_source_get_sample_rate');
+      final getCenterFrequency = library.lookupFunction<
+          _SourceGetU32Native,
+          _SourceGetU32Dart>('sdrpp_source_get_center_frequency');
       final disconnect = library.lookupFunction<
           _SourceVoidNative,
           _SourceVoidDart>('sdrpp_source_disconnect');
@@ -192,6 +228,10 @@ class NativeRtlTcpSourceBridge {
         source,
         destroy,
         connect,
+        openFile,
+        getKind,
+        getSampleRate,
+        getCenterFrequency,
         disconnect,
         isConnected,
         setFrequency,
@@ -250,6 +290,35 @@ class NativeRtlTcpSourceBridge {
       calloc.free(nativeHost);
     }
   }
+
+  bool openFile({
+    required String path,
+    required bool float32Mode,
+    int centerFrequencyHz = 0,
+  }) {
+    if (_disposed) {
+      return false;
+    }
+
+    final nativePath = path.toNativeUtf8();
+    try {
+      return _openFile(
+            _source,
+            nativePath,
+            float32Mode ? 1 : 0,
+            centerFrequencyHz,
+          ) ==
+          0;
+    } finally {
+      calloc.free(nativePath);
+    }
+  }
+
+  int get kind => _disposed ? 0 : _getKind(_source);
+  int get sampleRateHz =>
+      _disposed ? 0 : _getSampleRate(_source);
+  int get centerFrequencyHz =>
+      _disposed ? 0 : _getCenterFrequency(_source);
 
   void disconnect() {
     if (!_disposed) {
