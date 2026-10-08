@@ -189,6 +189,14 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         _rdsRadioText = rds.radioText;
       });
     });
+    _ctcssSubscription = _client.ctcssStream.listen((tone) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _detectedCtcssHz = tone.toneHz;
+      });
+    });
     _stateSubscription = _client.stateStream.listen((state) {
       if (!mounted) {
         return;
@@ -209,6 +217,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     unawaited(_audioSubscription?.cancel());
     unawaited(_backendSubscription?.cancel());
     unawaited(_rdsSubscription?.cancel());
+    unawaited(_ctcssSubscription?.cancel());
     unawaited(_stateSubscription?.cancel());
     unawaited(_client.dispose());
     unawaited(_audio.dispose());
