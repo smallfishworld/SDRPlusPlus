@@ -1182,9 +1182,14 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     final isRtlTcp = _selectedSourceKind == ReceiverSourceKind.rtlTcp;
     final backendText = connected
         ? (_client.usingNativeSource
-            ? (_client.sourceKind == ReceiverSourceKind.rtlTcp
-                ? 'Backend: official SDR++ native rtl_tcp client'
-                : 'Backend: official SDR++ native File Source')
+            ? switch (_client.sourceKind) {
+                ReceiverSourceKind.rtlTcp =>
+                  'Backend: official SDR++ native rtl_tcp client',
+                ReceiverSourceKind.file =>
+                  'Backend: official SDR++ native File Source',
+                ReceiverSourceKind.network =>
+                  'Backend: official SDR++ native Network Source',
+              }
             : 'Backend: Dart compatibility transport')
         : 'Backend: native SDR++ source runtime';
 
