@@ -87,6 +87,19 @@ typedef _SourceConnectSpyServerDart = int Function(
   int,
 );
 
+typedef _SourceConnectRtlSdrFdNative = Int32 Function(
+  Pointer<Void>,
+  Int32,
+  Uint32,
+  Uint32,
+);
+typedef _SourceConnectRtlSdrFdDart = int Function(
+  Pointer<Void>,
+  int,
+  int,
+  int,
+);
+
 typedef _SourceVoidNative = Void Function(Pointer<Void>);
 typedef _SourceVoidDart = void Function(Pointer<Void>);
 
@@ -144,6 +157,7 @@ class NativeRtlTcpSourceBridge {
     this._connectNetwork,
     this._connectSdrppServer,
     this._connectSpyServer,
+    this._connectRtlSdrFd,
     this._getKind,
     this._getSampleRate,
     this._getCenterFrequency,
@@ -177,6 +191,7 @@ class NativeRtlTcpSourceBridge {
   final _SourceConnectNetworkDart _connectNetwork;
   final _SourceConnectSdrppServerDart _connectSdrppServer;
   final _SourceConnectSpyServerDart _connectSpyServer;
+  final _SourceConnectRtlSdrFdDart _connectRtlSdrFd;
   final _SourceBoolDart _getKind;
   final _SourceGetU32Dart _getSampleRate;
   final _SourceGetU32Dart _getCenterFrequency;
@@ -229,6 +244,11 @@ class NativeRtlTcpSourceBridge {
           _SourceConnectSpyServerNative,
           _SourceConnectSpyServerDart>(
         'sdrpp_source_connect_spyserver',
+      );
+      final connectRtlSdrFd = library.lookupFunction<
+          _SourceConnectRtlSdrFdNative,
+          _SourceConnectRtlSdrFdDart>(
+        'sdrpp_source_connect_rtl_sdr_fd',
       );
       final getKind = library.lookupFunction<
           _SourceBoolNative,
@@ -298,6 +318,7 @@ class NativeRtlTcpSourceBridge {
         connectNetwork,
         connectSdrppServer,
         connectSpyServer,
+        connectRtlSdrFd,
         getKind,
         getSampleRate,
         getCenterFrequency,
@@ -458,6 +479,23 @@ class NativeRtlTcpSourceBridge {
     } finally {
       calloc.free(nativeHost);
     }
+  }
+
+  bool connectRtlSdrFd({
+    required int systemFd,
+    required int sampleRateHz,
+    required int frequencyHz,
+  }) {
+    if (_disposed || systemFd < 0) {
+      return false;
+    }
+    return _connectRtlSdrFd(
+          _source,
+          systemFd,
+          sampleRateHz,
+          frequencyHz,
+        ) ==
+        0;
   }
 
   int get kind => _disposed ? 0 : _getKind(_source);
