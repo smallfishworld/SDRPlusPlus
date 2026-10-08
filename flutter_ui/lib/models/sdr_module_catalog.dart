@@ -161,8 +161,19 @@ class SdrModuleCatalog {
       name: 'SoapySDR',
       kind: SdrModuleKind.source,
       upstreamPath: 'source_modules/soapy_source',
-      support: SdrModuleSupport.nativeSdk,
-      description: 'Generic SoapySDR hardware backend.',
+      support: SdrModuleSupport.active,
+      description:
+          'Generic SoapySDR runtime with packaged RTL-SDR and SoapyRemote modules.',
+      capabilities: <String>[
+        'hardware discovery',
+        'frequency',
+        'sample rate',
+        'bandwidth',
+        'gain',
+        'hardware AGC',
+        'RX channel selection',
+        'SoapyRemote universal network devices',
+      ],
     ),
     SdrModuleDescriptor(
       id: 'airspy_source',
