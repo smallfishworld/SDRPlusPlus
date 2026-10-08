@@ -37,6 +37,8 @@ class RtlTcpClient {
   Stream<Float32List> get spectrumStream => _dsp.spectrumStream;
   Stream<Uint8List> get audioStream => _dsp.audioStream;
   Stream<String> get backendStream => _dsp.backendStream;
+  Stream<({String programService, String radioText})> get rdsStream =>
+      _dsp.rdsStream;
   Stream<RtlTcpConnectionState> get stateStream => _stateController.stream;
 
   Future<void> connect({
