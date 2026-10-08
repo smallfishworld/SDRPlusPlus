@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../models/sdr_module_catalog.dart';
@@ -37,6 +38,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   Timer? _retuneAudioTimer;
   Timer? _recordUiTimer;
   String? _lastRecordingPath;
+
+  ReceiverSourceKind _selectedSourceKind = ReceiverSourceKind.rtlTcp;
+  String _iqFilePath = '';
+  bool _iqFileFloat32 = false;
 
   int _tab = 0;
   String _presetCategory = 'All';
