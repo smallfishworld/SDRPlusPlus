@@ -23,6 +23,8 @@
 #include <dsp/multirate/rational_resampler.h>
 #include <dsp/noise_reduction/noise_blanker.h>
 #include <dsp/noise_reduction/power_squelch.h>
+#include <dsp/noise_reduction/ctcss_squelch.h>
+#include <dsp/noise_reduction/fm_if.h>
 #include "../../decoder_modules/radio/src/rds_demod.h"
 #include "../../decoder_modules/radio/src/rds.h"
 
@@ -136,6 +138,11 @@ public:
 
         if (squelchEnabled && powerSquelch) {
             powerSquelch->process(ifCount, ifBuffer.data(), ifBuffer.data());
+        }
+
+        if (fmIfNrEnabled && fmIfNr &&
+            (mode == SDRPP_MODE_NFM || mode == SDRPP_MODE_WFM)) {
+            fmIfNr->process(ifCount, ifBuffer.data(), ifBuffer.data());
         }
 
         if (mode == SDRPP_MODE_WFM && wfmBroadcast) {
@@ -256,17 +263,35 @@ public:
             audioData = audioBuffer2.data();
         }
 
+        ensureCtcssCapacity(static_cast<size_t>(audioCount));
+        for (int i = 0; i < audioCount; ++i) {
+            const float sample = audioData[i];
+            ctcssInputBuffer[i] = dsp::stereo_t{sample, sample};
+        }
+
+        const dsp::stereo_t* finalStereo = ctcssInputBuffer.data();
+        if (ctcssMode != 0 && ctcss && mode == SDRPP_MODE_NFM) {
+            ctcss->process(
+                audioCount,
+                ctcssInputBuffer.data(),
+                ctcssOutputBuffer.data());
+            finalStereo = ctcssOutputBuffer.data();
+        }
+
         const size_t frameCapacity = outCapacity / 2;
         const size_t writeFrames = std::min<size_t>(
             static_cast<size_t>(audioCount),
             frameCapacity);
 
         for (size_t i = 0; i < writeFrames; ++i) {
-            const float sample = std::clamp(audioData[i], -1.0f, 1.0f);
-            const int16_t pcm =
-                static_cast<int16_t>(std::lrint(sample * 30000.0f));
-            outPcm[i * 2] = pcm;
-            outPcm[i * 2 + 1] = pcm;
+            const float left =
+                std::clamp(finalStereo[i].l, -1.0f, 1.0f);
+            const float right =
+                std::clamp(finalStereo[i].r, -1.0f, 1.0f);
+            outPcm[i * 2] =
+                static_cast<int16_t>(std::lrint(left * 30000.0f));
+            outPcm[i * 2 + 1] =
+                static_cast<int16_t>(std::lrint(right * 30000.0f));
         }
 
         return writeFrames * 2;
@@ -306,6 +331,128 @@ public:
         }
     }
 
+    void setCtcss(int modeValue, int toneIndex) {
+        std::lock_guard<std::mutex> lock(mutex);
+        ctcssMode = std::clamp(modeValue, 0, 2);
+        ctcssToneIndex = toneIndex;
+        if (!ctcss) {
+            return;
+        }
+
+        if (ctcssMode == 1) {
+            ctcss->setRequiredTone(
+                dsp::noise_reduction::CTCSS_TONE_NONE);
+        }
+        else if (ctcssMode == 2) {
+            if (toneIndex == -2) {
+                ctcss->setRequiredTone(
+                    dsp::noise_reduction::CTCSS_TONE_ANY);
+            }
+            else {
+                const int maxTone =
+                    dsp::noise_reduction::_CTCSS_TONE_COUNT - 1;
+                const int clampedTone =
+                    std::clamp(toneIndex, 0, maxTone);
+                ctcssToneIndex = clampedTone;
+                ctcss->setRequiredTone(
+                    static_cast<dsp::noise_reduction::CTCSSTone>(
+                        clampedTone));
+            }
+        }
+    }
+
+    int getCtcss(int* toneIndex, float* toneHz) {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (!ctcss || mode != SDRPP_MODE_NFM) {
+            if (toneIndex) {
+                *toneIndex = -1;
+            }
+            if (toneHz) {
+                *toneHz = 0.0f;
+            }
+            return 0;
+        }
+
+        const auto tone = ctcss->getCurrentTone();
+        if (toneIndex) {
+            *toneIndex = static_cast<int>(tone);
+        }
+        if (toneHz) {
+            *toneHz =
+                (tone >= 0 &&
+                 tone < dsp::noise_reduction::_CTCSS_TONE_COUNT)
+                    ? dsp::noise_reduction::CTCSS_TONES[tone]
+                    : 0.0f;
+        }
+        return tone == dsp::noise_reduction::CTCSS_TONE_NONE ? 0 : 1;
+    }
+
+    void setFmIfNr(bool enabled, int preset) {
+        std::lock_guard<std::mutex> lock(mutex);
+        fmIfNrEnabled = enabled;
+        fmIfNrPreset = std::clamp(preset, 0, 3);
+        if (fmIfNr) {
+            fmIfNr->setBins(ifNrBins(fmIfNrPreset));
+        }
+    }
+
+    void setAmAgc(bool carrier, float attackMs, float decayMs) {
+        std::lock_guard<std::mutex> lock(mutex);
+        amCarrierAgc = carrier;
+        amAgcAttackMs = std::clamp(attackMs, 1.0f, 200.0f);
+        amAgcDecayMs = std::clamp(decayMs, 1.0f, 20.0f);
+        if (am) {
+            am->setAGCMode(
+                amCarrierAgc
+                    ? dsp::demod::AM<float>::AGCMode::CARRIER
+                    : dsp::demod::AM<float>::AGCMode::AUDIO);
+            am->setAGCAttack(amAgcAttackMs / ifSampleRate);
+            am->setAGCDecay(amAgcDecayMs / ifSampleRate);
+        }
+    }
+
+    void setSsbAgc(float attackMs, float decayMs) {
+        std::lock_guard<std::mutex> lock(mutex);
+        ssbAgcAttackMs = std::clamp(attackMs, 1.0f, 200.0f);
+        ssbAgcDecayMs = std::clamp(decayMs, 1.0f, 20.0f);
+        if (ssb) {
+            ssb->setAGCAttack(ssbAgcAttackMs / ifSampleRate);
+            ssb->setAGCDecay(ssbAgcDecayMs / ifSampleRate);
+        }
+    }
+
+    void setCwOptions(int toneHz, float attackMs, float decayMs) {
+        std::lock_guard<std::mutex> lock(mutex);
+        cwToneHz = std::clamp(toneHz, 250, 1250);
+        cwAgcAttackMs = std::clamp(attackMs, 1.0f, 200.0f);
+        cwAgcDecayMs = std::clamp(decayMs, 1.0f, 20.0f);
+        if (cw) {
+            cw->setTone(cwToneHz);
+            cw->setAGCAttack(cwAgcAttackMs / ifSampleRate);
+            cw->setAGCDecay(cwAgcDecayMs / ifSampleRate);
+        }
+    }
+
+    void setNfmOptions(bool lowPass) {
+        std::lock_guard<std::mutex> lock(mutex);
+        nfmLowPass = lowPass;
+        if (nfm) {
+            nfm->setLowPass(nfmLowPass);
+        }
+    }
+
+    void setWfmOptions(bool stereo, bool lowPass, bool rdsEnabled) {
+        std::lock_guard<std::mutex> lock(mutex);
+        wfmStereo = stereo;
+        wfmLowPass = lowPass;
+        wfmRdsEnabled = rdsEnabled;
+        if (wfmBroadcast) {
+            wfmBroadcast->setStereo(wfmStereo);
+            wfmBroadcast->setLowPass(wfmLowPass);
+            wfmBroadcast->setRDSOut(wfmRdsEnabled);
+        }
+    }
+
     int getRds(
         char* programService,
         size_t programServiceCapacity,
@@ -320,6 +467,16 @@ public:
     }
 
 private:
+    static int ifNrBins(int preset) {
+        switch (preset) {
+            case 0: return 9;   // NOAA APT
+            case 1: return 15;  // Voice
+            case 2: return 31;  // Narrow Band
+            case 3: return 32;  // Broadcast
+            default: return 15;
+        }
+    }
+
     static double ifRateForMode(sdrpp_mode_t value) {
         // Keep the bridge at or above 48 kHz so SDR++'s RationalResampler is
         // always used in its mature downsample/equal-rate path.
