@@ -180,8 +180,18 @@ class SdrModuleCatalog {
       name: 'Airspy',
       kind: SdrModuleKind.source,
       upstreamPath: 'source_modules/airspy_source',
-      support: SdrModuleSupport.nativeSdk,
-      description: 'Airspy R2/Mini source.',
+      support: SdrModuleSupport.active,
+      description:
+          'Direct Android USB Airspy runtime through libairspy and SoapyAirspy.',
+      capabilities: <String>[
+        'Android USB Host',
+        'frequency',
+        'sample rate',
+        'gain',
+        'hardware AGC',
+        'Bias-T',
+        'RX streaming',
+      ],
     ),
     SdrModuleDescriptor(
       id: 'airspyhf_source',
@@ -204,8 +214,17 @@ class SdrModuleCatalog {
       name: 'HackRF',
       kind: SdrModuleKind.source,
       upstreamPath: 'source_modules/hackrf_source',
-      support: SdrModuleSupport.nativeSdk,
-      description: 'Great Scott Gadgets HackRF source.',
+      support: SdrModuleSupport.active,
+      description:
+          'Direct Android USB HackRF runtime through libhackrf and SoapyHackRF.',
+      capabilities: <String>[
+        'Android USB Host',
+        'frequency',
+        'sample rate',
+        'bandwidth',
+        'gain',
+        'RX streaming',
+      ],
     ),
     SdrModuleDescriptor(
       id: 'limesdr_source',
