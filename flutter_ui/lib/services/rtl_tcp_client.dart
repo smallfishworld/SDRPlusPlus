@@ -19,6 +19,9 @@ enum ReceiverSourceKind {
   sdrppServer,
   spyServer,
   rtlSdrUsb,
+  rfspace,
+  hermes,
+  spectranHttp,
 }
 
 class RtlTcpClient {
@@ -243,6 +246,115 @@ class RtlTcpClient {
       throw StateError(
         result.error.isEmpty
             ? 'Could not connect Network Source'
+            : result.error,
+      );
+    }
+
+    _nativeSourceActive = true;
+    _sampleRateHz = result.sampleRateHz;
+    _frequencyHz = result.centerFrequencyHz;
+    _dsp.setSampleRate(_sampleRateHz);
+    _dsp.setMode(_mode);
+    _dsp.setBandwidth(_bandwidthHz);
+    _setState(RtlTcpConnectionState.connected);
+  }
+
+  Future<void> connectRfspace({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    required int frequencyHz,
+    required int gainDb,
+    String mode = 'AM',
+    double bandwidthHz = 10000,
+  }) async {
+    await _connectNativeRemoteSource(
+      kind: ReceiverSourceKind.rfspace,
+      mode: mode,
+      bandwidthHz: bandwidthHz,
+      connect: () => _dsp.connectRfspaceSource(
+        host: host,
+        port: port,
+        sampleRateHz: sampleRateHz,
+        frequencyHz: frequencyHz,
+        gainDb: gainDb,
+      ),
+    );
+  }
+
+  Future<void> connectHermes({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    required int frequencyHz,
+    required int gainDb,
+    String mode = 'AM',
+    double bandwidthHz = 10000,
+  }) async {
+    await _connectNativeRemoteSource(
+      kind: ReceiverSourceKind.hermes,
+      mode: mode,
+      bandwidthHz: bandwidthHz,
+      connect: () => _dsp.connectHermesSource(
+        host: host,
+        port: port,
+        sampleRateHz: sampleRateHz,
+        frequencyHz: frequencyHz,
+        gainDb: gainDb,
+      ),
+    );
+  }
+
+  Future<void> connectSpectranHttp({
+    required String host,
+    required int port,
+    required int frequencyHz,
+    String mode = 'AM',
+    double bandwidthHz = 10000,
+  }) async {
+    await _connectNativeRemoteSource(
+      kind: ReceiverSourceKind.spectranHttp,
+      mode: mode,
+      bandwidthHz: bandwidthHz,
+      connect: () => _dsp.connectSpectranHttpSource(
+        host: host,
+        port: port,
+        frequencyHz: frequencyHz,
+      ),
+    );
+  }
+
+  Future<void> _connectNativeRemoteSource({
+    required ReceiverSourceKind kind,
+    required String mode,
+    required double bandwidthHz,
+    required Future<({
+      bool ok,
+      String error,
+      int sampleRateHz,
+      int centerFrequencyHz,
+    })> Function() connect,
+  }) async {
+    await disconnect();
+    await _dsp.start();
+
+    _setState(RtlTcpConnectionState.connecting);
+    _lastError = '';
+    _sourceKind = kind;
+    _filePath = '';
+    _mode = mode;
+    _bandwidthHz = bandwidthHz;
+    _dsp.setMode(_mode);
+    _dsp.setBandwidth(_bandwidthHz);
+
+    final result = await connect();
+    if (!result.ok) {
+      _lastError = result.error;
+      _nativeSourceActive = false;
+      _setState(RtlTcpConnectionState.error);
+      throw StateError(
+        result.error.isEmpty
+            ? 'Could not connect native SDR source'
             : result.error,
       );
     }
