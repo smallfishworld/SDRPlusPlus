@@ -55,6 +55,10 @@ from pathlib import Path
 
 p = Path("soapy-airspy/Settings.cpp")
 text = p.read_text()
+text = text.replace(
+    "    dev = nullptr;\n    std::stringstream serialstr;",
+    "    dev = nullptr;\n    serial = 0;\n    std::stringstream serialstr;",
+)
 old = '''    if (args.count("serial") != 0)
     {
         try {
