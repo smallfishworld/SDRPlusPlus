@@ -179,6 +179,9 @@ SDRPP_MOBILE_API int sdrpp_source_set_tuner_agc(
 SDRPP_MOBILE_API int sdrpp_source_set_gain_index(
     sdrpp_source_t source,
     int index);
+SDRPP_MOBILE_API int sdrpp_source_set_gain_tenth_db(
+    sdrpp_source_t source,
+    int gain_tenth_db);
 SDRPP_MOBILE_API int sdrpp_source_set_ppm(
     sdrpp_source_t source,
     int ppm);
