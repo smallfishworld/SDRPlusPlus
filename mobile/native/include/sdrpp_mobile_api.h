@@ -52,6 +52,10 @@ SDRPP_MOBILE_API int sdrpp_dsp_set_bandwidth(
     sdrpp_engine_t engine,
     float bandwidth_hz);
 
+SDRPP_MOBILE_API int sdrpp_dsp_set_frequency_offset(
+    sdrpp_engine_t engine,
+    float offset_hz);
+
 SDRPP_MOBILE_API int sdrpp_dsp_set_squelch(
     sdrpp_engine_t engine,
     int enabled,
@@ -164,6 +168,19 @@ SDRPP_MOBILE_API int sdrpp_source_connect_rtl_tcp(
     int port,
     uint32_t sample_rate_hz,
     uint32_t frequency_hz);
+
+SDRPP_MOBILE_API int sdrpp_source_open_file(
+    sdrpp_source_t source,
+    const char* path,
+    int float32_mode,
+    uint32_t center_frequency_hz);
+
+SDRPP_MOBILE_API int sdrpp_source_get_kind(
+    sdrpp_source_t source);
+SDRPP_MOBILE_API uint32_t sdrpp_source_get_sample_rate(
+    sdrpp_source_t source);
+SDRPP_MOBILE_API uint32_t sdrpp_source_get_center_frequency(
+    sdrpp_source_t source);
 SDRPP_MOBILE_API void sdrpp_source_disconnect(sdrpp_source_t source);
 SDRPP_MOBILE_API int sdrpp_source_is_connected(sdrpp_source_t source);
 
