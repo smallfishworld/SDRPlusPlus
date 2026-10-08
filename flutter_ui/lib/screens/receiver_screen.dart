@@ -2527,7 +2527,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         enabled: !connected,
         decoration: const InputDecoration(
           labelText: 'Device arguments',
-          hintText: 'driver=hackrf  /  driver=rtlsdr',
+          hintText: 'driver=rtlsdr  /  remote=192.168.1.20:55132',
           prefixIcon: Icon(Icons.code_rounded),
           border: OutlineInputBorder(),
         ),
@@ -2604,7 +2604,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         ),
       ],
       const Text(
-        'SoapySDR provides one common RX API for compatible RTL-SDR, HackRF, Airspy, bladeRF, LimeSDR, PlutoSDR, USRP and other drivers. A device is usable when its Soapy module and native SDK are packaged for this platform.',
+        'SoapySDR is active. RTL-SDR can be used locally; SoapyRemote can connect to any SoapySDR hardware on a server with remote=HOST:55132. Direct Android drivers for additional vendor hardware are being packaged separately.',
         style: TextStyle(
           color: Color(0xFF7F91A5),
           fontSize: 12,
