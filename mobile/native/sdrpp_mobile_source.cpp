@@ -1557,6 +1557,20 @@ int sdrpp_source_connect_spyserver(
         frequency_hz);
 }
 
+int sdrpp_source_connect_rtl_sdr_fd(
+    sdrpp_source_t source,
+    int system_fd,
+    uint32_t sample_rate_hz,
+    uint32_t frequency_hz) {
+    if (!source) {
+        return -1;
+    }
+    return asSource(source)->connectRtlSdrUsb(
+        system_fd,
+        sample_rate_hz,
+        frequency_hz);
+}
+
 int sdrpp_source_get_kind(sdrpp_source_t source) {
     return source ? asSource(source)->kind() : 0;
 }
