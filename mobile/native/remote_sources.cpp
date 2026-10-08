@@ -337,11 +337,6 @@ bool SpyServerSourceClient::configureSampleRate(
     decimation = bestStage;
     currentSampleRate.store(bestRate);
 
-    std::lock_guard<std::mutex> lock(mutex);
-    if (!socket || !socket->isOpen()) {
-        // During initial configuration, the socket is already assigned.
-        return false;
-    }
     return sendSetting(
         SPYSERVER_SETTING_IQ_DECIMATION,
         static_cast<uint32_t>(bestStage));
