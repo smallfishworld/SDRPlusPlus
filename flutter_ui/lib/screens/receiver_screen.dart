@@ -38,6 +38,11 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       TextEditingController(text: '127.0.0.1');
   final TextEditingController _spyServerPortController =
       TextEditingController(text: '5555');
+  final TextEditingController _nativeRemoteHostController =
+      TextEditingController(text: '127.0.0.1');
+  final TextEditingController _nativeRemotePortController =
+      TextEditingController(text: '50000');
+  int _nativeRemoteGainDb = 0;
 
   StreamSubscription<Float32List>? _spectrumSubscription;
   StreamSubscription<Uint8List>? _audioSubscription;
@@ -256,6 +261,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     _sdrppServerPortController.dispose();
     _spyServerHostController.dispose();
     _spyServerPortController.dispose();
+    _nativeRemoteHostController.dispose();
+    _nativeRemotePortController.dispose();
     super.dispose();
   }
 
@@ -1212,6 +1219,12 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                   'Backend: official SpyServer protocol runtime',
                 ReceiverSourceKind.rtlSdrUsb =>
                   'Backend: official librtlsdr USB runtime',
+                ReceiverSourceKind.rfspace =>
+                  'Backend: official RFspace native protocol runtime',
+                ReceiverSourceKind.hermes =>
+                  'Backend: official Hermes/OpenHPSDR native runtime',
+                ReceiverSourceKind.spectranHttp =>
+                  'Backend: official Spectran HTTP native runtime',
               }
             : 'Backend: Dart compatibility transport')
         : 'Backend: native SDR++ source runtime';
@@ -1267,6 +1280,18 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                   value: ReceiverSourceKind.rtlSdrUsb,
                   child: Text('RTL-SDR USB (Android)'),
                 ),
+                DropdownMenuItem(
+                  value: ReceiverSourceKind.rfspace,
+                  child: Text('RFspace'),
+                ),
+                DropdownMenuItem(
+                  value: ReceiverSourceKind.hermes,
+                  child: Text('Hermes / OpenHPSDR'),
+                ),
+                DropdownMenuItem(
+                  value: ReceiverSourceKind.spectranHttp,
+                  child: Text('Spectran HTTP'),
+                ),
               ],
               onChanged: connected
                   ? null
@@ -1275,6 +1300,13 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                         setState(() => _selectedSourceKind = value);
                         if (value == ReceiverSourceKind.rtlSdrUsb) {
                           unawaited(_refreshRtlUsbDevices());
+                        }
+                        if (value == ReceiverSourceKind.rfspace) {
+                          _nativeRemotePortController.text = '50000';
+                        } else if (value == ReceiverSourceKind.hermes) {
+                          _nativeRemotePortController.text = '1024';
+                        } else if (value == ReceiverSourceKind.spectranHttp) {
+                          _nativeRemotePortController.text = '54664';
                         }
                       }
                     },
@@ -1299,6 +1331,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
               ..._spyServerSourceControls(connected),
             if (_selectedSourceKind == ReceiverSourceKind.rtlSdrUsb)
               ..._rtlSdrUsbSourceControls(connected),
+            if (_selectedSourceKind == ReceiverSourceKind.rfspace ||
+                _selectedSourceKind == ReceiverSourceKind.hermes ||
+                _selectedSourceKind == ReceiverSourceKind.spectranHttp)
+              ..._nativeRemoteSourceControls(connected),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: connected ? _disconnect : _connectSelectedSource,
@@ -1315,6 +1351,12 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                           Icons.wifi_tethering_rounded,
                         ReceiverSourceKind.rtlSdrUsb =>
                           Icons.usb_rounded,
+                        ReceiverSourceKind.rfspace =>
+                          Icons.router_rounded,
+                        ReceiverSourceKind.hermes =>
+                          Icons.settings_input_antenna_rounded,
+                        ReceiverSourceKind.spectranHttp =>
+                          Icons.language_rounded,
                       },
               ),
               label: Text(
@@ -1332,6 +1374,12 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                           'Connect SpyServer',
                         ReceiverSourceKind.rtlSdrUsb =>
                           'Open RTL-SDR USB',
+                        ReceiverSourceKind.rfspace =>
+                          'Connect RFspace',
+                        ReceiverSourceKind.hermes =>
+                          'Connect Hermes',
+                        ReceiverSourceKind.spectranHttp =>
+                          'Connect Spectran HTTP',
                       },
               ),
             ),
@@ -1757,6 +1805,110 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     ];
   }
 
+  List<Widget> _nativeRemoteSourceControls(bool connected) {
+    final isSpectran =
+        _selectedSourceKind == ReceiverSourceKind.spectranHttp;
+    final isRfspace =
+        _selectedSourceKind == ReceiverSourceKind.rfspace;
+    final title = switch (_selectedSourceKind) {
+      ReceiverSourceKind.rfspace => 'RFspace',
+      ReceiverSourceKind.hermes => 'Hermes / OpenHPSDR',
+      ReceiverSourceKind.spectranHttp => 'Spectran HTTP',
+      _ => 'Native source',
+    };
+
+    return <Widget>[
+      TextField(
+        controller: _nativeRemoteHostController,
+        enabled: !connected,
+        decoration: InputDecoration(
+          labelText: '$title host',
+          prefixIcon: const Icon(Icons.dns_outlined),
+          border: const OutlineInputBorder(),
+        ),
+      ),
+      const SizedBox(height: 12),
+      TextField(
+        controller: _nativeRemotePortController,
+        enabled: !connected,
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(
+          labelText: 'Port',
+          prefixIcon: Icon(Icons.lan_outlined),
+          border: OutlineInputBorder(),
+        ),
+      ),
+      if (!isSpectran) ...<Widget>[
+        const SizedBox(height: 12),
+        Text(
+          'Requested sample rate  ${(_sampleRateHz / 1000).round()} kSPS',
+        ),
+        Slider(
+          value: _sampleRateHz.toDouble().clamp(
+                _selectedSourceKind == ReceiverSourceKind.hermes
+                    ? 48000
+                    : 50000,
+                _selectedSourceKind == ReceiverSourceKind.hermes
+                    ? 384000
+                    : 2000000,
+              ),
+          min: _selectedSourceKind == ReceiverSourceKind.hermes
+              ? 48000
+              : 50000,
+          max: _selectedSourceKind == ReceiverSourceKind.hermes
+              ? 384000
+              : 2000000,
+          divisions: _selectedSourceKind == ReceiverSourceKind.hermes
+              ? 7
+              : 39,
+          onChanged: connected
+              ? null
+              : (value) =>
+                  setState(() => _sampleRateHz = value.round()),
+        ),
+      ],
+      if (!isSpectran) ...<Widget>[
+        const SizedBox(height: 8),
+        Text(
+          isRfspace
+              ? 'RF gain  $_nativeRemoteGainDb dB'
+              : 'LNA gain  $_nativeRemoteGainDb dB',
+        ),
+        Slider(
+          value: _nativeRemoteGainDb.toDouble().clamp(
+                isRfspace ? -30 : 0,
+                isRfspace ? 0 : 60,
+              ),
+          min: isRfspace ? -30 : 0,
+          max: isRfspace ? 0 : 60,
+          divisions: isRfspace ? 30 : 60,
+          onChanged: connected
+              ? null
+              : (value) => setState(
+                    () => _nativeRemoteGainDb = value.round(),
+                  ),
+        ),
+      ],
+      const SizedBox(height: 8),
+      Text(
+        switch (_selectedSourceKind) {
+          ReceiverSourceKind.rfspace =>
+            'Uses SDR++ RFspace TCP/UDP control and complex IQ streaming.',
+          ReceiverSourceKind.hermes =>
+            'Uses SDR++ Hermes/OpenHPSDR Metis protocol with 48/96/192/384 kSPS.',
+          ReceiverSourceKind.spectranHttp =>
+            'Uses SDR++ Spectran HTTP streaming and follows device-reported center frequency/sample rate.',
+          _ => '',
+        },
+        style: const TextStyle(
+          color: Color(0xFF7F91A5),
+          fontSize: 12,
+          height: 1.4,
+        ),
+      ),
+    ];
+  }
+
   List<Widget> _rtlSdrUsbSourceControls(bool connected) {
     final supported = AndroidUsbService.supported;
     return <Widget>[
@@ -2002,9 +2154,103 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       case ReceiverSourceKind.rtlSdrUsb:
         await _connectRtlSdrUsbSource();
         break;
+      case ReceiverSourceKind.rfspace:
+        await _connectRfspaceSource();
+        break;
+      case ReceiverSourceKind.hermes:
+        await _connectHermesSource();
+        break;
+      case ReceiverSourceKind.spectranHttp:
+        await _connectSpectranHttpSource();
+        break;
       case ReceiverSourceKind.rtlTcp:
         await _connect();
         break;
+    }
+  }
+
+  Future<void> _connectRfspaceSource() async {
+    final port =
+        int.tryParse(_nativeRemotePortController.text.trim()) ?? 50000;
+    await _connectConfiguredNativeSource(
+      () => _client.connectRfspace(
+        host: _nativeRemoteHostController.text.trim(),
+        port: port,
+        sampleRateHz: _sampleRateHz,
+        frequencyHz: _frequencyHz,
+        gainDb: _nativeRemoteGainDb.clamp(-30, 0),
+        mode: _mode,
+        bandwidthHz: _bandwidthKhz * 1000,
+      ),
+    );
+  }
+
+  Future<void> _connectHermesSource() async {
+    final port =
+        int.tryParse(_nativeRemotePortController.text.trim()) ?? 1024;
+    await _connectConfiguredNativeSource(
+      () => _client.connectHermes(
+        host: _nativeRemoteHostController.text.trim(),
+        port: port,
+        sampleRateHz: _sampleRateHz,
+        frequencyHz: _frequencyHz,
+        gainDb: _nativeRemoteGainDb.clamp(0, 60),
+        mode: _mode,
+        bandwidthHz: _bandwidthKhz * 1000,
+      ),
+    );
+  }
+
+  Future<void> _connectSpectranHttpSource() async {
+    final port =
+        int.tryParse(_nativeRemotePortController.text.trim()) ?? 54664;
+    await _connectConfiguredNativeSource(
+      () => _client.connectSpectranHttp(
+        host: _nativeRemoteHostController.text.trim(),
+        port: port,
+        frequencyHz: _frequencyHz,
+        mode: _mode,
+        bandwidthHz: _bandwidthKhz * 1000,
+      ),
+    );
+  }
+
+  Future<void> _connectConfiguredNativeSource(
+    Future<void> Function() connect,
+  ) async {
+    setState(() {
+      _connectionError = '';
+      _waterfall.clear();
+    });
+
+    try {
+      await _audio.start();
+      _audio.setVolume(_volume);
+      await connect();
+      _client.setSquelch(_squelchEnabled, _squelchDb);
+      _client.setNoiseBlanker(
+        _noiseBlankerEnabled,
+        _noiseBlankerLevel,
+      );
+      _client.setHighPass(_highPassEnabled);
+      _client.setDeemphasis(_deemphasisUs);
+      _applyRadioDetailOptions();
+
+      if (mounted) {
+        setState(() {
+          _sampleRateHz = _client.sampleRateHz;
+          _frequencyHz = _client.frequencyHz;
+          _scanFrequencyHz = _frequencyHz;
+          _tab = 0;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        final message = _client.lastError.isNotEmpty
+            ? _client.lastError
+            : error.toString();
+        setState(() => _connectionError = message);
+      }
     }
   }
 
