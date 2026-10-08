@@ -129,9 +129,9 @@ jobs:
 
       - name: Name release APK
         run: |
-          cp build/app/outputs/flutter-apk/app-release.apk              build/app/outputs/flutter-apk/SDRPP-Receiver-v0.5.0-native.apk
+          cp build/app/outputs/flutter-apk/app-release.apk              build/app/outputs/flutter-apk/SDRPP-Receiver-v0.6.0-native.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: SDRPP-Receiver-Android
-          path: flutter_ui/build/app/outputs/flutter-apk/SDRPP-Receiver-v0.5.0-native.apk
+          path: flutter_ui/build/app/outputs/flutter-apk/SDRPP-Receiver-v0.6.0-native.apk
