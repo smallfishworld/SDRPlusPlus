@@ -1,5 +1,6 @@
 #include "include/sdrpp_mobile_api.h"
 #include "remote_sources.h"
+#include "rtl_sdr_direct.h"
 
 #include <algorithm>
 #include <array>
@@ -36,6 +37,7 @@ enum class MobileSourceKind : int {
     Network = 3,
     SdrppServer = 4,
     SpyServer = 5,
+    RtlSdrUsb = 6,
 };
 
 class MobileSourceRuntime {
@@ -437,6 +439,79 @@ public:
         return -1;
     }
 
+    int connectRtlSdrUsb(
+        int systemFd,
+        uint32_t sampleRateHz,
+        uint32_t frequencyHz) {
+        if (!engine || systemFd < 0) {
+            setError("Invalid RTL-SDR USB parameters");
+            return -1;
+        }
+
+        disconnect();
+
+        try {
+            auto client =
+                std::make_unique<mobile::RtlSdrDirectClient>(
+                    &iqStream);
+
+            iqStream.clearReadStop();
+            iqStream.clearWriteStop();
+            running.store(true);
+            consumerThread =
+                std::thread(&MobileSourceRuntime::consumerLoop, this);
+
+            if (!client->open(
+                    systemFd,
+                    sampleRateHz,
+                    frequencyHz)) {
+                setError(client->lastError());
+                running.store(false);
+                iqStream.stopReader();
+                iqStream.stopWriter();
+                if (consumerThread.joinable()) {
+                    consumerThread.join();
+                }
+                iqStream.clearReadStop();
+                iqStream.clearWriteStop();
+                return -1;
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(rtlUsbMutex);
+                rtlUsbClient = std::move(client);
+            }
+
+            const uint32_t actualRate =
+                std::max<uint32_t>(
+                    250000u,
+                    rtlUsbClient->sampleRate());
+            {
+                std::lock_guard<std::mutex> lock(stateMutex);
+                sampleRate = actualRate;
+                frequency = frequencyHz;
+                lastError.clear();
+            }
+
+            centerFrequency.store(frequencyHz);
+            sdrpp_dsp_set_sample_rate(engine, actualRate);
+            sdrpp_dsp_set_frequency_offset(engine, 0.0f);
+            connected.store(true);
+            sourceKind.store(
+                static_cast<int>(MobileSourceKind::RtlSdrUsb));
+            return 0;
+        }
+        catch (const std::exception& e) {
+            setError(e.what());
+        }
+        catch (...) {
+            setError("Unknown RTL-SDR USB source error");
+        }
+
+        disconnect();
+        return -1;
+    }
+
     int kind() const {
         return sourceKind.load();
     }
@@ -495,6 +570,15 @@ public:
         }
         if (spyRemote) {
             spyRemote->close();
+        }
+
+        std::unique_ptr<mobile::RtlSdrDirectClient> rtlUsb;
+        {
+            std::lock_guard<std::mutex> lock(rtlUsbMutex);
+            rtlUsb = std::move(rtlUsbClient);
+        }
+        if (rtlUsb) {
+            rtlUsb->close();
         }
 
         iqStream.stopWriter();
@@ -557,6 +641,10 @@ public:
             return spyServerClient &&
                 spyServerClient->isOpen();
         }
+        if (kindValue == MobileSourceKind::RtlSdrUsb) {
+            std::lock_guard<std::mutex> lock(rtlUsbMutex);
+            return rtlUsbClient && rtlUsbClient->isOpen();
+        }
         return false;
     }
 
@@ -596,6 +684,18 @@ public:
             std::lock_guard<std::mutex> lock(remoteMutex);
             if (!spyServerClient ||
                 !spyServerClient->setFrequency(value)) {
+                return -1;
+            }
+            centerFrequency.store(value);
+            sdrpp_dsp_set_frequency_offset(engine, 0.0f);
+            sdrpp_dsp_reset(engine);
+            return 0;
+        }
+
+        if (kindValue == MobileSourceKind::RtlSdrUsb) {
+            std::lock_guard<std::mutex> lock(rtlUsbMutex);
+            if (!rtlUsbClient ||
+                !rtlUsbClient->setFrequency(value)) {
                 return -1;
             }
             centerFrequency.store(value);
@@ -647,6 +747,21 @@ public:
             sdrpp_dsp_reset(engine);
             return 0;
         }
+        if (kindValue == MobileSourceKind::RtlSdrUsb) {
+            std::lock_guard<std::mutex> lock(rtlUsbMutex);
+            if (!rtlUsbClient ||
+                !rtlUsbClient->setSampleRate(value)) {
+                return -1;
+            }
+            const uint32_t actual = rtlUsbClient->sampleRate();
+            {
+                std::lock_guard<std::mutex> stateLock(stateMutex);
+                sampleRate = actual;
+            }
+            sdrpp_dsp_set_sample_rate(engine, actual);
+            sdrpp_dsp_reset(engine);
+            return 0;
+        }
         {
             std::lock_guard<std::mutex> lock(stateMutex);
             sampleRate = value;
@@ -659,6 +774,12 @@ public:
 
     int setTunerAgc(bool enabled) {
         tunerAgc = enabled;
+        if (static_cast<MobileSourceKind>(sourceKind.load()) ==
+            MobileSourceKind::RtlSdrUsb) {
+            std::lock_guard<std::mutex> lock(rtlUsbMutex);
+            return rtlUsbClient &&
+                rtlUsbClient->setTunerAgc(enabled) ? 0 : -1;
+        }
         return withClient([&](rtltcp::Client& client) {
             client.setGainMode(enabled ? 0 : 1);
             if (!enabled) {
@@ -679,6 +800,11 @@ public:
                 ? 0
                 : -1;
         }
+        if (kindValue == MobileSourceKind::RtlSdrUsb) {
+            std::lock_guard<std::mutex> lock(rtlUsbMutex);
+            return rtlUsbClient &&
+                rtlUsbClient->setGainIndex(gainIndex) ? 0 : -1;
+        }
         return withClient([&](rtltcp::Client& client) {
             client.setGainIndex(gainIndex);
         });
@@ -686,6 +812,12 @@ public:
 
     int setGainTenthDb(int value) {
         gainTenthDb = value;
+        if (static_cast<MobileSourceKind>(sourceKind.load()) ==
+            MobileSourceKind::RtlSdrUsb) {
+            std::lock_guard<std::mutex> lock(rtlUsbMutex);
+            return rtlUsbClient &&
+                rtlUsbClient->setGainTenthDb(value) ? 0 : -1;
+        }
         return withClient([&](rtltcp::Client& client) {
             client.setGain(gainTenthDb);
         });
@@ -693,6 +825,11 @@ public:
 
     int setPpm(int value) {
         ppm = value;
+        if (static_cast<MobileSourceKind>(sourceKind.load()) ==
+            MobileSourceKind::RtlSdrUsb) {
+            std::lock_guard<std::mutex> lock(rtlUsbMutex);
+            return rtlUsbClient && rtlUsbClient->setPpm(value) ? 0 : -1;
+        }
         return withClient([&](rtltcp::Client& client) {
             client.setPPM(ppm);
         });
@@ -700,6 +837,11 @@ public:
 
     int setRtlAgc(bool enabled) {
         rtlAgc = enabled;
+        if (static_cast<MobileSourceKind>(sourceKind.load()) ==
+            MobileSourceKind::RtlSdrUsb) {
+            std::lock_guard<std::mutex> lock(rtlUsbMutex);
+            return rtlUsbClient && rtlUsbClient->setRtlAgc(enabled) ? 0 : -1;
+        }
         return withClient([&](rtltcp::Client& client) {
             client.setAGCMode(enabled ? 1 : 0);
         });
@@ -707,6 +849,11 @@ public:
 
     int setDirectSampling(int value) {
         directSampling = std::clamp(value, 0, 2);
+        if (static_cast<MobileSourceKind>(sourceKind.load()) ==
+            MobileSourceKind::RtlSdrUsb) {
+            std::lock_guard<std::mutex> lock(rtlUsbMutex);
+            return rtlUsbClient && rtlUsbClient->setDirectSampling(directSampling) ? 0 : -1;
+        }
         return withClient([&](rtltcp::Client& client) {
             client.setDirectSampling(directSampling);
         });
@@ -714,6 +861,11 @@ public:
 
     int setOffsetTuning(bool enabled) {
         offsetTuning = enabled;
+        if (static_cast<MobileSourceKind>(sourceKind.load()) ==
+            MobileSourceKind::RtlSdrUsb) {
+            std::lock_guard<std::mutex> lock(rtlUsbMutex);
+            return rtlUsbClient && rtlUsbClient->setOffsetTuning(enabled) ? 0 : -1;
+        }
         return withClient([&](rtltcp::Client& client) {
             client.setOffsetTuning(enabled);
         });
@@ -721,6 +873,11 @@ public:
 
     int setBiasTee(bool enabled) {
         biasTee = enabled;
+        if (static_cast<MobileSourceKind>(sourceKind.load()) ==
+            MobileSourceKind::RtlSdrUsb) {
+            std::lock_guard<std::mutex> lock(rtlUsbMutex);
+            return rtlUsbClient && rtlUsbClient->setBiasTee(enabled) ? 0 : -1;
+        }
         return withClient([&](rtltcp::Client& client) {
             client.setBiasTee(enabled);
         });
@@ -1268,6 +1425,10 @@ private:
         sdrppServerClient;
     std::unique_ptr<mobile::SpyServerSourceClient>
         spyServerClient;
+
+    mutable std::mutex rtlUsbMutex;
+    std::unique_ptr<mobile::RtlSdrDirectClient>
+        rtlUsbClient;
 
     mutable std::mutex stateMutex;
     uint32_t sampleRate = 1024000;
