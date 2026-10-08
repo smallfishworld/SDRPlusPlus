@@ -518,6 +518,295 @@ public:
         return -1;
     }
 
+    int connectRFspace(
+        const char* host,
+        int port,
+        uint32_t requestedSampleRate,
+        uint32_t frequencyHz,
+        int gainDb) {
+        if (!engine || !host || !*host ||
+            port <= 0 || port > 65535) {
+            setError("Invalid RFspace parameters");
+            return -1;
+        }
+
+        disconnect();
+
+        try {
+            iqStream.clearReadStop();
+            iqStream.clearWriteStop();
+            running.store(true);
+            consumerThread =
+                std::thread(&MobileSourceRuntime::consumerLoop, this);
+
+            auto client =
+                rfspace::connect(std::string(host), port, &iqStream);
+
+            auto rates = client->getSamplerates();
+            if (rates.empty()) {
+                setError("RFspace device reported no sample rates");
+                running.store(false);
+                client->close();
+                iqStream.stopReader();
+                iqStream.stopWriter();
+                if (consumerThread.joinable()) {
+                    consumerThread.join();
+                }
+                iqStream.clearReadStop();
+                iqStream.clearWriteStop();
+                return -1;
+            }
+
+            const auto nearest = *std::min_element(
+                rates.begin(),
+                rates.end(),
+                [requestedSampleRate](uint32_t a, uint32_t b) {
+                    const auto da = std::llabs(
+                        static_cast<long long>(a) -
+                        static_cast<long long>(requestedSampleRate));
+                    const auto db = std::llabs(
+                        static_cast<long long>(b) -
+                        static_cast<long long>(requestedSampleRate));
+                    return da < db;
+                });
+
+            client->setSampleRate(nearest);
+            client->setFrequency(frequencyHz);
+            client->setGain(
+                static_cast<int8_t>(
+                    std::clamp(gainDb, -30, 0)));
+            client->setPort(rfspace::RFSPACE_RF_PORT_1);
+            client->start(
+                rfspace::RFSPACE_SAMP_FORMAT_COMPLEX,
+                rfspace::RFSPACE_SAMP_FORMAT_16BIT);
+
+            {
+                std::lock_guard<std::mutex> lock(remoteMutex);
+                rfspaceClient = std::move(client);
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(stateMutex);
+                sampleRate = nearest;
+                frequency = frequencyHz;
+                lastError.clear();
+            }
+            centerFrequency.store(frequencyHz);
+            sdrpp_dsp_set_sample_rate(engine, nearest);
+            sdrpp_dsp_set_frequency_offset(engine, 0.0f);
+            sdrpp_dsp_reset(engine);
+
+            connected.store(true);
+            sourceKind.store(
+                static_cast<int>(MobileSourceKind::RFspace));
+            return 0;
+        }
+        catch (const std::exception& e) {
+            setError(e.what());
+        }
+        catch (...) {
+            setError("Unknown RFspace source error");
+        }
+
+        disconnect();
+        return -1;
+    }
+
+    int connectHermes(
+        const char* host,
+        int port,
+        uint32_t requestedSampleRate,
+        uint32_t frequencyHz,
+        int gainDb) {
+        if (!engine || !host || !*host ||
+            port <= 0 || port > 65535) {
+            setError("Invalid Hermes parameters");
+            return -1;
+        }
+
+        disconnect();
+
+        try {
+            iqStream.clearReadStop();
+            iqStream.clearWriteStop();
+            running.store(true);
+
+            auto client =
+                hermes::open(std::string(host), port);
+
+            const std::array<uint32_t, 4> rates{
+                48000u, 96000u, 192000u, 384000u};
+            std::size_t best = 0;
+            uint64_t bestDelta = UINT64_MAX;
+            for (std::size_t i = 0; i < rates.size(); ++i) {
+                const uint64_t delta =
+                    static_cast<uint64_t>(
+                        std::llabs(
+                            static_cast<long long>(rates[i]) -
+                            static_cast<long long>(requestedSampleRate)));
+                if (delta < bestDelta) {
+                    bestDelta = delta;
+                    best = i;
+                }
+            }
+
+            client->out.clearReadStop();
+            client->out.clearWriteStop();
+
+            {
+                std::lock_guard<std::mutex> lock(remoteMutex);
+                hermesClient = client;
+            }
+
+            hermesThread =
+                std::thread(&MobileSourceRuntime::hermesForwardLoop, this);
+            consumerThread =
+                std::thread(&MobileSourceRuntime::consumerLoop, this);
+
+            client->setSamplerate(
+                static_cast<hermes::HermesLiteSamplerate>(best));
+            client->setFrequency(frequencyHz);
+            client->setGain(std::clamp(gainDb, 0, 60));
+            client->start();
+
+            {
+                std::lock_guard<std::mutex> lock(stateMutex);
+                sampleRate = rates[best];
+                frequency = frequencyHz;
+                lastError.clear();
+            }
+            centerFrequency.store(frequencyHz);
+            sdrpp_dsp_set_sample_rate(engine, rates[best]);
+            sdrpp_dsp_set_frequency_offset(engine, 0.0f);
+            sdrpp_dsp_reset(engine);
+
+            connected.store(true);
+            sourceKind.store(
+                static_cast<int>(MobileSourceKind::Hermes));
+            return 0;
+        }
+        catch (const std::exception& e) {
+            setError(e.what());
+        }
+        catch (...) {
+            setError("Unknown Hermes source error");
+        }
+
+        disconnect();
+        return -1;
+    }
+
+    int connectSpectranHttp(
+        const char* host,
+        int port,
+        uint32_t frequencyHz) {
+        if (!engine || !host || !*host ||
+            port <= 0 || port > 65535) {
+            setError("Invalid Spectran HTTP parameters");
+            return -1;
+        }
+
+        disconnect();
+
+        try {
+            iqStream.clearReadStop();
+            iqStream.clearWriteStop();
+            running.store(true);
+            consumerThread =
+                std::thread(&MobileSourceRuntime::consumerLoop, this);
+
+            auto client = std::make_shared<SpectranHTTPClient>(
+                std::string(host),
+                port,
+                &iqStream);
+
+            spectranFreqHandler =
+                client->onCenterFrequencyChanged.bind(
+                    [this](uint64_t value) {
+                        centerFrequency.store(
+                            static_cast<uint32_t>(
+                                std::min<uint64_t>(
+                                    value,
+                                    UINT32_MAX)));
+                        {
+                            std::lock_guard<std::mutex> lock(stateMutex);
+                            frequency =
+                                static_cast<uint32_t>(
+                                    std::min<uint64_t>(
+                                        value,
+                                        UINT32_MAX));
+                        }
+                    });
+
+            spectranRateHandler =
+                client->onSamplerateChanged.bind(
+                    [this](uint64_t value) {
+                        const uint32_t rate =
+                            static_cast<uint32_t>(
+                                std::clamp<uint64_t>(
+                                    value,
+                                    1000u,
+                                    UINT32_MAX));
+                        uint32_t previous = 0;
+                        {
+                            std::lock_guard<std::mutex> lock(stateMutex);
+                            previous = sampleRate;
+                            sampleRate = rate;
+                        }
+                        if (previous != rate) {
+                            sdrpp_dsp_set_sample_rate(engine, rate);
+                            sdrpp_dsp_reset(engine);
+                        }
+                    });
+
+            {
+                std::lock_guard<std::mutex> lock(remoteMutex);
+                spectranClient = client;
+            }
+
+            client->startWorker();
+            client->streaming(true);
+
+            {
+                std::lock_guard<std::mutex> lock(stateMutex);
+                sampleRate = 1000000u;
+                frequency = frequencyHz;
+                lastError.clear();
+            }
+            centerFrequency.store(frequencyHz);
+            sdrpp_dsp_set_sample_rate(engine, 1000000u);
+            sdrpp_dsp_set_frequency_offset(engine, 0.0f);
+
+            // The device reports its real center/sample rate in the stream
+            // metadata. This request is best-effort until that first report.
+            try {
+                client->setCenterFrequency(frequencyHz);
+            }
+            catch (...) {
+            }
+
+            connected.store(client->isOpen());
+            if (!connected.load()) {
+                setError("Spectran HTTP connection closed during startup");
+                disconnect();
+                return -1;
+            }
+
+            sourceKind.store(
+                static_cast<int>(MobileSourceKind::SpectranHttp));
+            return 0;
+        }
+        catch (const std::exception& e) {
+            setError(e.what());
+        }
+        catch (...) {
+            setError("Unknown Spectran HTTP source error");
+        }
+
+        disconnect();
+        return -1;
+    }
+
     int kind() const {
         return sourceKind.load();
     }
