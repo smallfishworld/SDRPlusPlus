@@ -35,6 +35,76 @@ typedef _SetHighPassDart = int Function(Pointer<Void>, int);
 typedef _SetDeemphasisNative = Int32 Function(Pointer<Void>, Int32);
 typedef _SetDeemphasisDart = int Function(Pointer<Void>, int);
 
+typedef _SetCtcssNative = Int32 Function(Pointer<Void>, Int32, Int32);
+typedef _SetCtcssDart = int Function(Pointer<Void>, int, int);
+
+typedef _GetCtcssNative = Int32 Function(
+  Pointer<Void>,
+  Pointer<Int32>,
+  Pointer<Float>,
+);
+typedef _GetCtcssDart = int Function(
+  Pointer<Void>,
+  Pointer<Int32>,
+  Pointer<Float>,
+);
+
+typedef _SetFmIfNrNative = Int32 Function(Pointer<Void>, Int32, Int32);
+typedef _SetFmIfNrDart = int Function(Pointer<Void>, int, int);
+
+typedef _SetAmAgcNative = Int32 Function(
+  Pointer<Void>,
+  Int32,
+  Float,
+  Float,
+);
+typedef _SetAmAgcDart = int Function(
+  Pointer<Void>,
+  int,
+  double,
+  double,
+);
+
+typedef _SetSsbAgcNative = Int32 Function(
+  Pointer<Void>,
+  Float,
+  Float,
+);
+typedef _SetSsbAgcDart = int Function(
+  Pointer<Void>,
+  double,
+  double,
+);
+
+typedef _SetCwOptionsNative = Int32 Function(
+  Pointer<Void>,
+  Int32,
+  Float,
+  Float,
+);
+typedef _SetCwOptionsDart = int Function(
+  Pointer<Void>,
+  int,
+  double,
+  double,
+);
+
+typedef _SetNfmOptionsNative = Int32 Function(Pointer<Void>, Int32);
+typedef _SetNfmOptionsDart = int Function(Pointer<Void>, int);
+
+typedef _SetWfmOptionsNative = Int32 Function(
+  Pointer<Void>,
+  Int32,
+  Int32,
+  Int32,
+);
+typedef _SetWfmOptionsDart = int Function(
+  Pointer<Void>,
+  int,
+  int,
+  int,
+);
+
 typedef _GetRdsNative = Int32 Function(
   Pointer<Void>,
   Pointer<Uint8>,
@@ -82,6 +152,14 @@ class NativeDspBridge {
     this._setNoiseBlanker,
     this._setHighPass,
     this._setDeemphasis,
+    this._setCtcss,
+    this._getCtcss,
+    this._setFmIfNr,
+    this._setAmAgc,
+    this._setSsbAgc,
+    this._setCwOptions,
+    this._setNfmOptions,
+    this._setWfmOptions,
     this._getRds,
     this._reset,
     this._process,
@@ -103,6 +181,14 @@ class NativeDspBridge {
   final _SetNoiseBlankerDart _setNoiseBlanker;
   final _SetHighPassDart _setHighPass;
   final _SetDeemphasisDart _setDeemphasis;
+  final _SetCtcssDart _setCtcss;
+  final _GetCtcssDart _getCtcss;
+  final _SetFmIfNrDart _setFmIfNr;
+  final _SetAmAgcDart _setAmAgc;
+  final _SetSsbAgcDart _setSsbAgc;
+  final _SetCwOptionsDart _setCwOptions;
+  final _SetNfmOptionsDart _setNfmOptions;
+  final _SetWfmOptionsDart _setWfmOptions;
   final _GetRdsDart _getRds;
   final _ResetDart _reset;
   final _ProcessDart _process;
@@ -145,6 +231,30 @@ class NativeDspBridge {
       final setDeemphasis = library.lookupFunction<
           _SetDeemphasisNative,
           _SetDeemphasisDart>('sdrpp_dsp_set_deemphasis');
+      final setCtcss = library.lookupFunction<
+          _SetCtcssNative,
+          _SetCtcssDart>('sdrpp_dsp_set_ctcss');
+      final getCtcss = library.lookupFunction<
+          _GetCtcssNative,
+          _GetCtcssDart>('sdrpp_dsp_get_ctcss');
+      final setFmIfNr = library.lookupFunction<
+          _SetFmIfNrNative,
+          _SetFmIfNrDart>('sdrpp_dsp_set_fm_ifnr');
+      final setAmAgc = library.lookupFunction<
+          _SetAmAgcNative,
+          _SetAmAgcDart>('sdrpp_dsp_set_am_agc');
+      final setSsbAgc = library.lookupFunction<
+          _SetSsbAgcNative,
+          _SetSsbAgcDart>('sdrpp_dsp_set_ssb_agc');
+      final setCwOptions = library.lookupFunction<
+          _SetCwOptionsNative,
+          _SetCwOptionsDart>('sdrpp_dsp_set_cw_options');
+      final setNfmOptions = library.lookupFunction<
+          _SetNfmOptionsNative,
+          _SetNfmOptionsDart>('sdrpp_dsp_set_nfm_options');
+      final setWfmOptions = library.lookupFunction<
+          _SetWfmOptionsNative,
+          _SetWfmOptionsDart>('sdrpp_dsp_set_wfm_options');
       final getRds = library.lookupFunction<
           _GetRdsNative,
           _GetRdsDart>('sdrpp_dsp_get_rds');
@@ -177,6 +287,14 @@ class NativeDspBridge {
         setNoiseBlanker,
         setHighPass,
         setDeemphasis,
+        setCtcss,
+        getCtcss,
+        setFmIfNr,
+        setAmAgc,
+        setSsbAgc,
+        setCwOptions,
+        setNfmOptions,
+        setWfmOptions,
         getRds,
         reset,
         process,
@@ -253,6 +371,99 @@ class NativeDspBridge {
   void setDeemphasis(int modeUs) {
     if (!_disposed) {
       _setDeemphasis(_handle, modeUs);
+    }
+  }
+
+  void setCtcss(int mode, int toneIndex) {
+    if (!_disposed) {
+      _setCtcss(_handle, mode, toneIndex);
+    }
+  }
+
+  ({int toneIndex, double toneHz})? getCtcss() {
+    if (_disposed) {
+      return null;
+    }
+    final toneIndex = calloc<Int32>();
+    final toneHz = calloc<Float>();
+    try {
+      final valid = _getCtcss(_handle, toneIndex, toneHz);
+      if (valid == 0) {
+        return null;
+      }
+      return (
+        toneIndex: toneIndex.value,
+        toneHz: toneHz.value.toDouble(),
+      );
+    } finally {
+      calloc.free(toneIndex);
+      calloc.free(toneHz);
+    }
+  }
+
+  void setFmIfNr(bool enabled, int preset) {
+    if (!_disposed) {
+      _setFmIfNr(_handle, enabled ? 1 : 0, preset);
+    }
+  }
+
+  void setAmAgc({
+    required bool carrier,
+    required double attackMs,
+    required double decayMs,
+  }) {
+    if (!_disposed) {
+      _setAmAgc(
+        _handle,
+        carrier ? 1 : 0,
+        attackMs,
+        decayMs,
+      );
+    }
+  }
+
+  void setSsbAgc({
+    required double attackMs,
+    required double decayMs,
+  }) {
+    if (!_disposed) {
+      _setSsbAgc(_handle, attackMs, decayMs);
+    }
+  }
+
+  void setCwOptions({
+    required int toneHz,
+    required double attackMs,
+    required double decayMs,
+  }) {
+    if (!_disposed) {
+      _setCwOptions(
+        _handle,
+        toneHz,
+        attackMs,
+        decayMs,
+      );
+    }
+  }
+
+  void setNfmOptions({required bool lowPass}) {
+    if (!_disposed) {
+      _setNfmOptions(_handle, lowPass ? 1 : 0);
+    }
+  }
+
+  void setWfmOptions({
+    required bool stereo,
+    required bool lowPass,
+    required bool rdsEnabled,
+  }) {
+    if (!_disposed) {
+      _setWfmOptions(
+        _handle,
+        stereo ? 1 : 0,
+        lowPass ? 1 : 0,
+        rdsEnabled ? 1 : 0,
+      );
     }
   }
 
