@@ -15,6 +15,8 @@ enum ReceiverSourceKind {
   rtlTcp,
   file,
   network,
+  sdrppServer,
+  spyServer,
 }
 
 class RtlTcpClient {
@@ -252,6 +254,100 @@ class RtlTcpClient {
     _setState(RtlTcpConnectionState.connected);
   }
 
+  Future<void> connectSdrppServer({
+    required String host,
+    required int port,
+    int frequencyHz = 127250000,
+    String mode = 'AM',
+    double bandwidthHz = 10000,
+  }) async {
+    await disconnect();
+    await _dsp.start();
+
+    _setState(RtlTcpConnectionState.connecting);
+    _lastError = '';
+    _sourceKind = ReceiverSourceKind.sdrppServer;
+    _filePath = '';
+    _mode = mode;
+    _bandwidthHz = bandwidthHz;
+
+    _dsp.setMode(_mode);
+    _dsp.setBandwidth(_bandwidthHz);
+
+    final result = await _dsp.connectSdrppServerSource(
+      host: host,
+      port: port,
+      frequencyHz: frequencyHz,
+    );
+
+    if (!result.ok) {
+      _lastError = result.error;
+      _nativeSourceActive = false;
+      _setState(RtlTcpConnectionState.error);
+      throw StateError(
+        result.error.isEmpty
+            ? 'Could not connect SDR++ Server'
+            : result.error,
+      );
+    }
+
+    _nativeSourceActive = true;
+    _sampleRateHz = result.sampleRateHz;
+    _frequencyHz = result.centerFrequencyHz;
+    _dsp.setSampleRate(_sampleRateHz);
+    _dsp.setMode(_mode);
+    _dsp.setBandwidth(_bandwidthHz);
+    _setState(RtlTcpConnectionState.connected);
+  }
+
+  Future<void> connectSpyServer({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    int frequencyHz = 127250000,
+    String mode = 'AM',
+    double bandwidthHz = 10000,
+  }) async {
+    await disconnect();
+    await _dsp.start();
+
+    _setState(RtlTcpConnectionState.connecting);
+    _lastError = '';
+    _sourceKind = ReceiverSourceKind.spyServer;
+    _filePath = '';
+    _mode = mode;
+    _bandwidthHz = bandwidthHz;
+
+    _dsp.setMode(_mode);
+    _dsp.setBandwidth(_bandwidthHz);
+
+    final result = await _dsp.connectSpyServerSource(
+      host: host,
+      port: port,
+      sampleRateHz: sampleRateHz,
+      frequencyHz: frequencyHz,
+    );
+
+    if (!result.ok) {
+      _lastError = result.error;
+      _nativeSourceActive = false;
+      _setState(RtlTcpConnectionState.error);
+      throw StateError(
+        result.error.isEmpty
+            ? 'Could not connect SpyServer'
+            : result.error,
+      );
+    }
+
+    _nativeSourceActive = true;
+    _sampleRateHz = result.sampleRateHz;
+    _frequencyHz = result.centerFrequencyHz;
+    _dsp.setSampleRate(_sampleRateHz);
+    _dsp.setMode(_mode);
+    _dsp.setBandwidth(_bandwidthHz);
+    _setState(RtlTcpConnectionState.connected);
+  }
+
   Future<void> disconnect() async {
     if (_nativeSourceActive) {
       _dsp.disconnectSource();
@@ -280,7 +376,8 @@ class RtlTcpClient {
   }
 
   void setSampleRate(int sampleRateHz) {
-    if (_sourceKind == ReceiverSourceKind.file) {
+    if (_sourceKind == ReceiverSourceKind.file ||
+        _sourceKind == ReceiverSourceKind.sdrppServer) {
       return;
     }
     _sampleRateHz = sampleRateHz;
