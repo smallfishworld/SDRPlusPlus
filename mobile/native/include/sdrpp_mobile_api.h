@@ -230,6 +230,34 @@ SDRPP_MOBILE_API int sdrpp_source_connect_rtl_sdr_fd(
     uint32_t sample_rate_hz,
     uint32_t frequency_hz);
 
+/*
+ * Generic SoapySDR hardware source. The device_args string uses the standard
+ * Soapy markup syntax, for example "driver=rtlsdr" or
+ * "driver=hackrf,serial=...".
+ */
+SDRPP_MOBILE_API int sdrpp_source_soapy_available(void);
+SDRPP_MOBILE_API size_t sdrpp_source_soapy_enumerate(
+    const char* filter_args,
+    char* out_devices,
+    size_t capacity);
+SDRPP_MOBILE_API int sdrpp_source_connect_soapy(
+    sdrpp_source_t source,
+    const char* device_args,
+    uint32_t sample_rate_hz,
+    uint32_t frequency_hz,
+    double rf_bandwidth_hz,
+    double gain_db,
+    int agc,
+    uint32_t channel);
+SDRPP_MOBILE_API int sdrpp_source_get_soapy_driver(
+    sdrpp_source_t source,
+    char* out_text,
+    size_t capacity);
+SDRPP_MOBILE_API int sdrpp_source_get_soapy_hardware(
+    sdrpp_source_t source,
+    char* out_text,
+    size_t capacity);
+
 SDRPP_MOBILE_API int sdrpp_source_get_kind(
     sdrpp_source_t source);
 SDRPP_MOBILE_API uint32_t sdrpp_source_get_sample_rate(
@@ -269,6 +297,9 @@ SDRPP_MOBILE_API int sdrpp_source_set_offset_tuning(
 SDRPP_MOBILE_API int sdrpp_source_set_bias_tee(
     sdrpp_source_t source,
     int enabled);
+SDRPP_MOBILE_API int sdrpp_source_set_rf_bandwidth(
+    sdrpp_source_t source,
+    double bandwidth_hz);
 
 /* Non-blocking drains from the native source worker. */
 SDRPP_MOBILE_API size_t sdrpp_source_read_audio(
