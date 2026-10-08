@@ -114,5 +114,25 @@ if(BUILD_TESTING AND NOT ANDROID)
             NAME sdrpp_mobile_file_source_smoke
             COMMAND sdrpp_mobile_file_source_smoke
         )
+
+        add_executable(sdrpp_mobile_network_source_smoke
+            tests/network_source_smoke.cpp
+        )
+        target_compile_features(
+            sdrpp_mobile_network_source_smoke
+            PRIVATE cxx_std_17
+        )
+        target_include_directories(
+            sdrpp_mobile_network_source_smoke
+            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        target_link_libraries(
+            sdrpp_mobile_network_source_smoke
+            PRIVATE sdrpp_mobile Threads::Threads
+        )
+        add_test(
+            NAME sdrpp_mobile_network_source_smoke
+            COMMAND sdrpp_mobile_network_source_smoke
+        )
     endif()
 endif()
