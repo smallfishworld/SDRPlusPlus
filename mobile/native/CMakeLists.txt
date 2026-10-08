@@ -4,6 +4,7 @@ project(sdrpp_mobile_native LANGUAGES CXX)
 
 add_library(sdrpp_mobile SHARED
     sdrpp_mobile_dsp.cpp
+    ../../decoder_modules/radio/src/rds.cpp
 )
 
 target_compile_features(sdrpp_mobile PRIVATE cxx_std_17)
@@ -15,6 +16,7 @@ target_include_directories(sdrpp_mobile PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/compat
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../core/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../decoder_modules/radio/src
 )
 
 if(MSVC)
