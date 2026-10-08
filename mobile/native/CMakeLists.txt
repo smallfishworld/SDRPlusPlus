@@ -24,6 +24,7 @@ target_include_directories(sdrpp_mobile PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../core/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../decoder_modules/radio/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../source_modules/rtl_tcp_source/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../source_modules/file_source/src
 )
 
 if(MSVC)
