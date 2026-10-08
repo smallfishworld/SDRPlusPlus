@@ -14,6 +14,7 @@ enum RtlTcpConnectionState {
 enum ReceiverSourceKind {
   rtlTcp,
   file,
+  network,
 }
 
 class RtlTcpClient {
@@ -186,6 +187,58 @@ class RtlTcpClient {
       throw StateError(
         result.error.isEmpty
             ? 'Could not open IQ file'
+            : result.error,
+      );
+    }
+
+    _nativeSourceActive = true;
+    _sampleRateHz = result.sampleRateHz;
+    _frequencyHz = result.centerFrequencyHz;
+    _dsp.setSampleRate(_sampleRateHz);
+    _dsp.setMode(_mode);
+    _dsp.setBandwidth(_bandwidthHz);
+    _setState(RtlTcpConnectionState.connected);
+  }
+
+  Future<void> connectNetwork({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    required int protocol,
+    required int sampleType,
+    int centerFrequencyHz = 0,
+    String mode = 'AM',
+    double bandwidthHz = 10000,
+  }) async {
+    await disconnect();
+    await _dsp.start();
+
+    _setState(RtlTcpConnectionState.connecting);
+    _lastError = '';
+    _sourceKind = ReceiverSourceKind.network;
+    _filePath = '';
+    _mode = mode;
+    _bandwidthHz = bandwidthHz;
+
+    _dsp.setMode(_mode);
+    _dsp.setBandwidth(_bandwidthHz);
+
+    final result = await _dsp.connectNetworkSource(
+      host: host,
+      port: port,
+      sampleRateHz: sampleRateHz,
+      protocol: protocol,
+      sampleType: sampleType,
+      centerFrequencyHz: centerFrequencyHz,
+    );
+
+    if (!result.ok) {
+      _lastError = result.error;
+      _nativeSourceActive = false;
+      _setState(RtlTcpConnectionState.error);
+      throw StateError(
+        result.error.isEmpty
+            ? 'Could not connect Network Source'
             : result.error,
       );
     }
