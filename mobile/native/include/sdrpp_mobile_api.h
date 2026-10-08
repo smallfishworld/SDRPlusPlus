@@ -189,6 +189,19 @@ SDRPP_MOBILE_API int sdrpp_source_connect_network(
     int sample_type,
     uint32_t center_frequency_hz);
 
+SDRPP_MOBILE_API int sdrpp_source_connect_sdrpp_server(
+    sdrpp_source_t source,
+    const char* host,
+    int port,
+    uint32_t frequency_hz);
+
+SDRPP_MOBILE_API int sdrpp_source_connect_spyserver(
+    sdrpp_source_t source,
+    const char* host,
+    int port,
+    uint32_t sample_rate_hz,
+    uint32_t frequency_hz);
+
 SDRPP_MOBILE_API int sdrpp_source_get_kind(
     sdrpp_source_t source);
 SDRPP_MOBILE_API uint32_t sdrpp_source_get_sample_rate(
