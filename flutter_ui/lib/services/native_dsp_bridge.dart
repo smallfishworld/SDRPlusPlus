@@ -24,6 +24,17 @@ typedef _SetSquelchNative =
 typedef _SetSquelchDart =
     int Function(Pointer<Void>, int, double);
 
+typedef _SetNoiseBlankerNative =
+    Int32 Function(Pointer<Void>, Int32, Float);
+typedef _SetNoiseBlankerDart =
+    int Function(Pointer<Void>, int, double);
+
+typedef _SetHighPassNative = Int32 Function(Pointer<Void>, Int32);
+typedef _SetHighPassDart = int Function(Pointer<Void>, int);
+
+typedef _SetDeemphasisNative = Int32 Function(Pointer<Void>, Int32);
+typedef _SetDeemphasisDart = int Function(Pointer<Void>, int);
+
 typedef _ResetNative = Void Function(Pointer<Void>);
 typedef _ResetDart = void Function(Pointer<Void>);
 
@@ -53,6 +64,9 @@ class NativeDspBridge {
     this._setMode,
     this._setBandwidth,
     this._setSquelch,
+    this._setNoiseBlanker,
+    this._setHighPass,
+    this._setDeemphasis,
     this._reset,
     this._process,
     this.backendName,
@@ -70,6 +84,9 @@ class NativeDspBridge {
   final _SetModeDart _setMode;
   final _SetBandwidthDart _setBandwidth;
   final _SetSquelchDart _setSquelch;
+  final _SetNoiseBlankerDart _setNoiseBlanker;
+  final _SetHighPassDart _setHighPass;
+  final _SetDeemphasisDart _setDeemphasis;
   final _ResetDart _reset;
   final _ProcessDart _process;
   final String backendName;
@@ -102,6 +119,15 @@ class NativeDspBridge {
       final setSquelch = library.lookupFunction<
           _SetSquelchNative,
           _SetSquelchDart>('sdrpp_dsp_set_squelch');
+      final setNoiseBlanker = library.lookupFunction<
+          _SetNoiseBlankerNative,
+          _SetNoiseBlankerDart>('sdrpp_dsp_set_noise_blanker');
+      final setHighPass = library.lookupFunction<
+          _SetHighPassNative,
+          _SetHighPassDart>('sdrpp_dsp_set_high_pass');
+      final setDeemphasis = library.lookupFunction<
+          _SetDeemphasisNative,
+          _SetDeemphasisDart>('sdrpp_dsp_set_deemphasis');
       final reset = library.lookupFunction<_ResetNative, _ResetDart>(
         'sdrpp_dsp_reset',
       );
@@ -128,6 +154,9 @@ class NativeDspBridge {
         setMode,
         setBandwidth,
         setSquelch,
+        setNoiseBlanker,
+        setHighPass,
+        setDeemphasis,
         reset,
         process,
         backendNameFn().toDartString(),
@@ -185,6 +214,24 @@ class NativeDspBridge {
   void setSquelch(bool enabled, double levelDb) {
     if (!_disposed) {
       _setSquelch(_handle, enabled ? 1 : 0, levelDb);
+    }
+  }
+
+  void setNoiseBlanker(bool enabled, double level) {
+    if (!_disposed) {
+      _setNoiseBlanker(_handle, enabled ? 1 : 0, level);
+    }
+  }
+
+  void setHighPass(bool enabled) {
+    if (!_disposed) {
+      _setHighPass(_handle, enabled ? 1 : 0);
+    }
+  }
+
+  void setDeemphasis(int modeUs) {
+    if (!_disposed) {
+      _setDeemphasis(_handle, modeUs);
     }
   }
 
