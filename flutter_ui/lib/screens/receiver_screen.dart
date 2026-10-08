@@ -1201,6 +1201,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                   'Backend: official SDR++ native File Source',
                 ReceiverSourceKind.network =>
                   'Backend: official SDR++ native Network Source',
+                ReceiverSourceKind.sdrppServer =>
+                  'Backend: official SDR++ Server protocol runtime',
+                ReceiverSourceKind.spyServer =>
+                  'Backend: official SpyServer protocol runtime',
               }
             : 'Backend: Dart compatibility transport')
         : 'Backend: native SDR++ source runtime';
@@ -1220,33 +1224,45 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
             ),
             const SizedBox(height: 5),
             const Text(
-              'Select an SDR++ source adapter. RTL-TCP and File Source are now active native implementations.',
+              'Active native sources now include RTL-TCP, IQ File, Network Source, SDR++ Server and SpyServer.',
               style: TextStyle(color: Color(0xFF7F91A5)),
             ),
             const SizedBox(height: 12),
-            SegmentedButton<ReceiverSourceKind>(
-              segments: const <ButtonSegment<ReceiverSourceKind>>[
-                ButtonSegment(
+            DropdownButtonFormField<ReceiverSourceKind>(
+              initialValue: _selectedSourceKind,
+              decoration: const InputDecoration(
+                labelText: 'Source adapter',
+                prefixIcon: Icon(Icons.sensors_rounded),
+                border: OutlineInputBorder(),
+              ),
+              items: const <DropdownMenuItem<ReceiverSourceKind>>[
+                DropdownMenuItem(
                   value: ReceiverSourceKind.rtlTcp,
-                  icon: Icon(Icons.lan_rounded),
-                  label: Text('RTL-TCP'),
+                  child: Text('RTL-TCP'),
                 ),
-                ButtonSegment(
+                DropdownMenuItem(
                   value: ReceiverSourceKind.file,
-                  icon: Icon(Icons.audio_file_rounded),
-                  label: Text('IQ File'),
+                  child: Text('IQ File'),
                 ),
-                ButtonSegment(
+                DropdownMenuItem(
                   value: ReceiverSourceKind.network,
-                  icon: Icon(Icons.hub_rounded),
-                  label: Text('Network'),
+                  child: Text('Network Source'),
+                ),
+                DropdownMenuItem(
+                  value: ReceiverSourceKind.sdrppServer,
+                  child: Text('SDR++ Server'),
+                ),
+                DropdownMenuItem(
+                  value: ReceiverSourceKind.spyServer,
+                  child: Text('SpyServer'),
                 ),
               ],
-              selected: <ReceiverSourceKind>{_selectedSourceKind},
-              onSelectionChanged: connected
+              onChanged: connected
                   ? null
                   : (value) {
-                      setState(() => _selectedSourceKind = value.first);
+                      if (value != null) {
+                        setState(() => _selectedSourceKind = value);
+                      }
                     },
             ),
             const SizedBox(height: 8),
@@ -1263,26 +1279,40 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
               ..._fileSourceControls(connected),
             if (_selectedSourceKind == ReceiverSourceKind.network)
               ..._networkSourceControls(connected),
+            if (_selectedSourceKind == ReceiverSourceKind.sdrppServer)
+              ..._sdrppServerSourceControls(connected),
+            if (_selectedSourceKind == ReceiverSourceKind.spyServer)
+              ..._spyServerSourceControls(connected),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: connected ? _disconnect : _connectSelectedSource,
               icon: Icon(
                 connected
                     ? Icons.link_off_rounded
-                    : isRtlTcp
-                        ? Icons.link_rounded
-                        : _selectedSourceKind == ReceiverSourceKind.file
-                            ? Icons.play_arrow_rounded
-                            : Icons.hub_rounded,
+                    : switch (_selectedSourceKind) {
+                        ReceiverSourceKind.rtlTcp => Icons.link_rounded,
+                        ReceiverSourceKind.file => Icons.play_arrow_rounded,
+                        ReceiverSourceKind.network => Icons.hub_rounded,
+                        ReceiverSourceKind.sdrppServer =>
+                          Icons.dns_rounded,
+                        ReceiverSourceKind.spyServer =>
+                          Icons.wifi_tethering_rounded,
+                      },
               ),
               label: Text(
                 connected
                     ? 'Disconnect'
-                    : isRtlTcp
-                        ? 'Connect to receiver'
-                        : _selectedSourceKind == ReceiverSourceKind.file
-                            ? 'Open IQ file'
-                            : 'Connect Network Source',
+                    : switch (_selectedSourceKind) {
+                        ReceiverSourceKind.rtlTcp =>
+                          'Connect to receiver',
+                        ReceiverSourceKind.file => 'Open IQ file',
+                        ReceiverSourceKind.network =>
+                          'Connect Network Source',
+                        ReceiverSourceKind.sdrppServer =>
+                          'Connect SDR++ Server',
+                        ReceiverSourceKind.spyServer =>
+                          'Connect SpyServer',
+                      },
               ),
             ),
             if (_connectionError.isNotEmpty) ...<Widget>[
