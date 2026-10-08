@@ -48,6 +48,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   double _manualGainDb = 0;
   bool _squelchEnabled = false;
   double _squelchDb = -82;
+  bool _noiseBlankerEnabled = false;
+  double _noiseBlankerLevel = 10;
+  bool _highPassEnabled = false;
+  int _deemphasisUs = 50;
   double _volume = 0.72;
   int _tuningStepHz = 25000;
   double _dragAccumulatorPx = 0;
@@ -1215,6 +1219,118 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                 ),
                 const SizedBox(height: 12),
                 Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        const Text(
+                          'Radio DSP',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Official SDR++ post-processing chain',
+                          style: TextStyle(color: Color(0xFF7F91A5)),
+                        ),
+                        const SizedBox(height: 10),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Noise blanker'),
+                          subtitle: Text(
+                            'Impulse suppression · level ${_noiseBlankerLevel.toStringAsFixed(1)}',
+                          ),
+                          value: _noiseBlankerEnabled,
+                          onChanged: (value) {
+                            setState(() => _noiseBlankerEnabled = value);
+                            _client.setNoiseBlanker(
+                              value,
+                              _noiseBlankerLevel,
+                            );
+                          },
+                        ),
+                        Slider(
+                          value: _noiseBlankerLevel,
+                          min: 1,
+                          max: 10,
+                          divisions: 90,
+                          label: _noiseBlankerLevel.toStringAsFixed(1),
+                          onChanged: _noiseBlankerEnabled
+                              ? (value) {
+                                  setState(
+                                    () => _noiseBlankerLevel = value,
+                                  );
+                                  _client.setNoiseBlanker(
+                                    true,
+                                    value,
+                                  );
+                                }
+                              : null,
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('High-pass filter'),
+                          subtitle: const Text(
+                            '300 Hz speech high-pass filter',
+                          ),
+                          value: _highPassEnabled,
+                          onChanged: (value) {
+                            setState(() => _highPassEnabled = value);
+                            _client.setHighPass(value);
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<int>(
+                          initialValue: _deemphasisUs,
+                          decoration: const InputDecoration(
+                            labelText: 'De-emphasis',
+                            prefixIcon: Icon(Icons.multiline_chart_rounded),
+                            border: OutlineInputBorder(),
+                          ),
+                          items: const <DropdownMenuItem<int>>[
+                            DropdownMenuItem(
+                              value: 0,
+                              child: Text('None'),
+                            ),
+                            DropdownMenuItem(
+                              value: 22,
+                              child: Text('22 µs'),
+                            ),
+                            DropdownMenuItem(
+                              value: 50,
+                              child: Text('50 µs'),
+                            ),
+                            DropdownMenuItem(
+                              value: 75,
+                              child: Text('75 µs'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            if (value == null) {
+                              return;
+                            }
+                            setState(() => _deemphasisUs = value);
+                            _client.setDeemphasis(value);
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'CTCSS, IF noise reduction and RDS controls are being moved into this same native radio chain next.',
+                          style: TextStyle(
+                            color: Color(0xFF718398),
+                            fontSize: 12,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Card(
                   child: ListTile(
                     leading: const Icon(Icons.memory_rounded),
                     title: const Text('DSP backend'),
@@ -1429,6 +1545,12 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       _client.setDirectSampling(_directSampling);
       _client.setPpm(_ppm);
       _client.setSquelch(_squelchEnabled, _squelchDb);
+      _client.setNoiseBlanker(
+        _noiseBlankerEnabled,
+        _noiseBlankerLevel,
+      );
+      _client.setHighPass(_highPassEnabled);
+      _client.setDeemphasis(_deemphasisUs);
       if (mounted) {
         setState(() => _tab = 0);
       }
