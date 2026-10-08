@@ -306,7 +306,7 @@ public:
         }
     }
 
-    int getRdsLocked(
+    int getRds(
         char* programService,
         size_t programServiceCapacity,
         char* radioText,
@@ -623,7 +623,7 @@ private:
         }
     }
 
-    int getRds(
+    int getRdsLocked(
         char* programService,
         size_t programServiceCapacity,
         char* radioText,
