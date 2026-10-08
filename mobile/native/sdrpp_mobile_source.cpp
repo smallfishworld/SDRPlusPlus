@@ -1,6 +1,7 @@
 #include "include/sdrpp_mobile_api.h"
 #include "remote_sources.h"
 #include "rtl_sdr_direct.h"
+#include "soapy_dynamic.h"
 
 #include <algorithm>
 #include <array>
@@ -44,6 +45,7 @@ enum class MobileSourceKind : int {
     RFspace = 7,
     Hermes = 8,
     SpectranHttp = 9,
+    Soapy = 10,
 };
 
 class MobileSourceRuntime {
@@ -807,6 +809,97 @@ public:
         return -1;
     }
 
+    int connectSoapy(
+        const char* deviceArgs,
+        uint32_t requestedSampleRate,
+        uint32_t frequencyHz,
+        double rfBandwidthHz,
+        double gainDb,
+        bool agc,
+        uint32_t channelIndex) {
+        if (!engine || !deviceArgs) {
+            setError("Invalid SoapySDR parameters");
+            return -1;
+        }
+
+        disconnect();
+
+        try {
+            auto client =
+                std::make_unique<mobile::SoapyDynamicClient>(
+                    &iqStream);
+
+            iqStream.clearReadStop();
+            iqStream.clearWriteStop();
+            running.store(true);
+            consumerThread =
+                std::thread(&MobileSourceRuntime::consumerLoop, this);
+
+            if (!client->open(
+                    std::string(deviceArgs),
+                    requestedSampleRate,
+                    frequencyHz,
+                    rfBandwidthHz,
+                    gainDb,
+                    agc,
+                    static_cast<std::size_t>(channelIndex))) {
+                setError(client->lastError());
+                running.store(false);
+                iqStream.stopReader();
+                iqStream.stopWriter();
+                if (consumerThread.joinable()) {
+                    consumerThread.join();
+                }
+                iqStream.clearReadStop();
+                iqStream.clearWriteStop();
+                return -1;
+            }
+
+            const uint32_t actualRate =
+                std::max<uint32_t>(
+                    1000u,
+                    client->sampleRate());
+            const uint32_t actualFrequency =
+                client->frequency() != 0
+                    ? client->frequency()
+                    : frequencyHz;
+
+            {
+                std::lock_guard<std::mutex> lock(soapyMutex);
+                soapyClient = std::move(client);
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(stateMutex);
+                sampleRate = actualRate;
+                frequency = actualFrequency;
+                lastError.clear();
+            }
+            centerFrequency.store(actualFrequency);
+            tunerAgc = agc;
+            gainTenthDb =
+                static_cast<int>(std::llround(gainDb * 10.0));
+
+            sdrpp_dsp_set_sample_rate(engine, actualRate);
+            sdrpp_dsp_set_frequency_offset(engine, 0.0f);
+            sdrpp_dsp_reset(engine);
+
+            connected.store(true);
+            sourceKind.store(
+                static_cast<int>(MobileSourceKind::Soapy));
+            return 0;
+        }
+        catch (const std::exception& e) {
+            setError(e.what());
+        }
+        catch (...) {
+            setError("Unknown SoapySDR source error");
+        }
+
+        disconnect();
+        return -1;
+    }
+
     int kind() const {
         return sourceKind.load();
     }
@@ -874,6 +967,15 @@ public:
         }
         if (rtlUsb) {
             rtlUsb->close();
+        }
+
+        std::unique_ptr<mobile::SoapyDynamicClient> soapyRemote;
+        {
+            std::lock_guard<std::mutex> lock(soapyMutex);
+            soapyRemote = std::move(soapyClient);
+        }
+        if (soapyRemote) {
+            soapyRemote->close();
         }
 
         std::shared_ptr<rfspace::Client> rfspaceRemote;
@@ -1006,6 +1108,10 @@ public:
             std::lock_guard<std::mutex> lock(remoteMutex);
             return spectranClient && spectranClient->isOpen();
         }
+        if (kindValue == MobileSourceKind::Soapy) {
+            std::lock_guard<std::mutex> lock(soapyMutex);
+            return soapyClient && soapyClient->isOpen();
+        }
         return false;
     }
 
@@ -1095,6 +1201,17 @@ public:
             sdrpp_dsp_reset(engine);
             return 0;
         }
+        if (kindValue == MobileSourceKind::Soapy) {
+            std::lock_guard<std::mutex> lock(soapyMutex);
+            if (!soapyClient ||
+                !soapyClient->setFrequency(value)) {
+                return -1;
+            }
+            centerFrequency.store(value);
+            sdrpp_dsp_set_frequency_offset(engine, 0.0f);
+            sdrpp_dsp_reset(engine);
+            return 0;
+        }
 
         sdrpp_dsp_set_frequency_offset(engine, 0.0f);
         sdrpp_dsp_reset(engine);
@@ -1154,6 +1271,22 @@ public:
             sdrpp_dsp_reset(engine);
             return 0;
         }
+        if (kindValue == MobileSourceKind::Soapy) {
+            std::lock_guard<std::mutex> lock(soapyMutex);
+            if (!soapyClient ||
+                !soapyClient->setSampleRate(value)) {
+                return -1;
+            }
+            const uint32_t actual =
+                std::max<uint32_t>(1000u, soapyClient->sampleRate());
+            {
+                std::lock_guard<std::mutex> stateLock(stateMutex);
+                sampleRate = actual;
+            }
+            sdrpp_dsp_set_sample_rate(engine, actual);
+            sdrpp_dsp_reset(engine);
+            return 0;
+        }
         {
             std::lock_guard<std::mutex> lock(stateMutex);
             sampleRate = value;
@@ -1166,6 +1299,13 @@ public:
 
     int setTunerAgc(bool enabled) {
         tunerAgc = enabled;
+        if (static_cast<MobileSourceKind>(sourceKind.load()) ==
+            MobileSourceKind::Soapy) {
+            std::lock_guard<std::mutex> lock(soapyMutex);
+            return soapyClient && soapyClient->setAgc(enabled)
+                ? 0
+                : -1;
+        }
         if (static_cast<MobileSourceKind>(sourceKind.load()) ==
             MobileSourceKind::RtlSdrUsb) {
             std::lock_guard<std::mutex> lock(rtlUsbMutex);
@@ -1204,6 +1344,15 @@ public:
 
     int setGainTenthDb(int value) {
         gainTenthDb = value;
+        if (static_cast<MobileSourceKind>(sourceKind.load()) ==
+            MobileSourceKind::Soapy) {
+            std::lock_guard<std::mutex> lock(soapyMutex);
+            return soapyClient &&
+                soapyClient->setGain(
+                    static_cast<double>(value) / 10.0)
+                ? 0
+                : -1;
+        }
         if (static_cast<MobileSourceKind>(sourceKind.load()) ==
             MobileSourceKind::RtlSdrUsb) {
             std::lock_guard<std::mutex> lock(rtlUsbMutex);
@@ -1275,6 +1424,37 @@ public:
         });
     }
 
+    int setRfBandwidth(double bandwidthHz) {
+        if (bandwidthHz <= 0.0) {
+            return -1;
+        }
+        if (static_cast<MobileSourceKind>(sourceKind.load()) ==
+            MobileSourceKind::Soapy) {
+            std::lock_guard<std::mutex> lock(soapyMutex);
+            return soapyClient &&
+                soapyClient->setBandwidth(bandwidthHz)
+                ? 0
+                : -1;
+        }
+        return -1;
+    }
+
+    int copySoapyDriver(char* out, std::size_t capacity) const {
+        std::lock_guard<std::mutex> lock(soapyMutex);
+        return copyText(
+            soapyClient ? soapyClient->driverKey() : std::string(),
+            out,
+            capacity);
+    }
+
+    int copySoapyHardware(char* out, std::size_t capacity) const {
+        std::lock_guard<std::mutex> lock(soapyMutex);
+        return copyText(
+            soapyClient ? soapyClient->hardwareKey() : std::string(),
+            out,
+            capacity);
+    }
+
     std::size_t readAudio(
         int16_t* out,
         std::size_t capacity) {
@@ -1324,6 +1504,24 @@ public:
     }
 
 private:
+    static int copyText(
+        const std::string& value,
+        char* out,
+        std::size_t capacity) {
+        if (!out || capacity == 0) {
+            return 0;
+        }
+        const std::size_t count =
+            std::min<std::size_t>(
+                capacity - 1,
+                value.size());
+        if (count > 0) {
+            std::memcpy(out, value.data(), count);
+        }
+        out[count] = '\0';
+        return static_cast<int>(count);
+    }
+
     static uint32_t parseFrequencyFromPath(
         const std::string& path) {
         try {
@@ -1859,6 +2057,10 @@ private:
     std::unique_ptr<mobile::RtlSdrDirectClient>
         rtlUsbClient;
 
+    mutable std::mutex soapyMutex;
+    std::unique_ptr<mobile::SoapyDynamicClient>
+        soapyClient;
+
     mutable std::mutex stateMutex;
     uint32_t sampleRate = 1024000;
     uint32_t frequency = 127250000;
@@ -2047,6 +2249,78 @@ int sdrpp_source_connect_rtl_sdr_fd(
         frequency_hz);
 }
 
+int sdrpp_source_soapy_available(void) {
+    return mobile::SoapyDynamicClient::runtimeAvailable() ? 1 : 0;
+}
+
+size_t sdrpp_source_soapy_enumerate(
+    const char* filter_args,
+    char* out_devices,
+    size_t capacity) {
+    const auto devices =
+        mobile::SoapyDynamicClient::enumerate(
+            filter_args ? std::string(filter_args) : std::string());
+
+    std::string joined;
+    for (std::size_t i = 0; i < devices.size(); ++i) {
+        if (i != 0) {
+            joined.push_back('\n');
+        }
+        joined += devices[i];
+    }
+
+    if (!out_devices || capacity == 0) {
+        return joined.size();
+    }
+
+    const std::size_t count =
+        std::min<std::size_t>(capacity - 1, joined.size());
+    if (count > 0) {
+        std::memcpy(out_devices, joined.data(), count);
+    }
+    out_devices[count] = '\0';
+    return count;
+}
+
+int sdrpp_source_connect_soapy(
+    sdrpp_source_t source,
+    const char* device_args,
+    uint32_t sample_rate_hz,
+    uint32_t frequency_hz,
+    double rf_bandwidth_hz,
+    double gain_db,
+    int agc,
+    uint32_t channel) {
+    return source
+        ? asSource(source)->connectSoapy(
+              device_args,
+              sample_rate_hz,
+              frequency_hz,
+              rf_bandwidth_hz,
+              gain_db,
+              agc != 0,
+              channel)
+        : -1;
+}
+
+int sdrpp_source_get_soapy_driver(
+    sdrpp_source_t source,
+    char* out_text,
+    size_t capacity) {
+    return source
+        ? asSource(source)->copySoapyDriver(out_text, capacity)
+        : 0;
+}
+
+int sdrpp_source_get_soapy_hardware(
+    sdrpp_source_t source,
+    char* out_text,
+    size_t capacity) {
+    return source
+        ? asSource(source)->copySoapyHardware(out_text, capacity)
+        : 0;
+}
+
 int sdrpp_source_get_kind(sdrpp_source_t source) {
     return source ? asSource(source)->kind() : 0;
 }
@@ -2152,6 +2426,14 @@ int sdrpp_source_set_bias_tee(
     int enabled) {
     return source
         ? asSource(source)->setBiasTee(enabled != 0)
+        : -1;
+}
+
+int sdrpp_source_set_rf_bandwidth(
+    sdrpp_source_t source,
+    double bandwidth_hz) {
+    return source
+        ? asSource(source)->setRfBandwidth(bandwidth_hz)
         : -1;
 }
 
