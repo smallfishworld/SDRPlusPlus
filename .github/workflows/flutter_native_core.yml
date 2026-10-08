@@ -220,6 +220,9 @@ static unsigned int gethostid(void)
               text = text.replace(marker, marker + android)
           info.write_text(text)
           PY
+          grep -q "static unsigned int gethostid" \
+            soapy-remote/common/SoapyInfoUtils.in.cpp
+
           cmake \
             -S soapy-remote \
             -B soapy-remote-build \
