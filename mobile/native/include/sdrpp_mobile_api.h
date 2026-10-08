@@ -144,6 +144,72 @@ SDRPP_MOBILE_API size_t sdrpp_dsp_process_u8(
     int16_t* out_pcm,
     size_t out_capacity_samples);
 
+/* Process interleaved float32 IQ already normalized to [-1, 1]. */
+SDRPP_MOBILE_API size_t sdrpp_dsp_process_cf32(
+    sdrpp_engine_t engine,
+    const float* iq_interleaved,
+    size_t complex_samples,
+    int16_t* out_pcm,
+    size_t out_capacity_samples);
+
+typedef void* sdrpp_source_t;
+
+SDRPP_MOBILE_API sdrpp_source_t sdrpp_source_create(
+    sdrpp_engine_t engine);
+SDRPP_MOBILE_API void sdrpp_source_destroy(sdrpp_source_t source);
+
+SDRPP_MOBILE_API int sdrpp_source_connect_rtl_tcp(
+    sdrpp_source_t source,
+    const char* host,
+    int port,
+    uint32_t sample_rate_hz,
+    uint32_t frequency_hz);
+SDRPP_MOBILE_API void sdrpp_source_disconnect(sdrpp_source_t source);
+SDRPP_MOBILE_API int sdrpp_source_is_connected(sdrpp_source_t source);
+
+SDRPP_MOBILE_API int sdrpp_source_set_frequency(
+    sdrpp_source_t source,
+    uint32_t frequency_hz);
+SDRPP_MOBILE_API int sdrpp_source_set_sample_rate(
+    sdrpp_source_t source,
+    uint32_t sample_rate_hz);
+SDRPP_MOBILE_API int sdrpp_source_set_tuner_agc(
+    sdrpp_source_t source,
+    int enabled);
+SDRPP_MOBILE_API int sdrpp_source_set_gain_index(
+    sdrpp_source_t source,
+    int index);
+SDRPP_MOBILE_API int sdrpp_source_set_ppm(
+    sdrpp_source_t source,
+    int ppm);
+SDRPP_MOBILE_API int sdrpp_source_set_rtl_agc(
+    sdrpp_source_t source,
+    int enabled);
+SDRPP_MOBILE_API int sdrpp_source_set_direct_sampling(
+    sdrpp_source_t source,
+    int mode);
+SDRPP_MOBILE_API int sdrpp_source_set_offset_tuning(
+    sdrpp_source_t source,
+    int enabled);
+SDRPP_MOBILE_API int sdrpp_source_set_bias_tee(
+    sdrpp_source_t source,
+    int enabled);
+
+/* Non-blocking drains from the native source worker. */
+SDRPP_MOBILE_API size_t sdrpp_source_read_audio(
+    sdrpp_source_t source,
+    int16_t* out_pcm,
+    size_t capacity_samples);
+SDRPP_MOBILE_API size_t sdrpp_source_read_spectrum(
+    sdrpp_source_t source,
+    float* out_db,
+    size_t capacity_bins);
+
+SDRPP_MOBILE_API int sdrpp_source_get_last_error(
+    sdrpp_source_t source,
+    char* out_error,
+    size_t capacity);
+
 SDRPP_MOBILE_API uint32_t sdrpp_dsp_output_sample_rate(void);
 
 /* Returns a short implementation/build identifier for diagnostics. */
