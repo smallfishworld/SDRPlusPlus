@@ -71,6 +71,17 @@ SDRPP_MOBILE_API int sdrpp_dsp_set_deemphasis(
     int mode_us);
 
 /*
+ * Read current RDS Program Service / RadioText strings.
+ * Returns 1 when at least one field is currently valid, 0 otherwise.
+ */
+SDRPP_MOBILE_API int sdrpp_dsp_get_rds(
+    sdrpp_engine_t engine,
+    char* program_service,
+    size_t program_service_capacity,
+    char* radio_text,
+    size_t radio_text_capacity);
+
+/*
  * Clear resampler/demodulator/AGC history after retuning so old-channel state
  * and buffered audio cannot mute or contaminate the new frequency.
  */
