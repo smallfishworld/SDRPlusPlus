@@ -121,6 +121,28 @@ class SdrDspWorker {
     });
   }
 
+  void setNoiseBlanker(bool enabled, double level) {
+    _commandPort?.send(<String, Object>{
+      'type': 'noiseBlanker',
+      'enabled': enabled,
+      'level': level,
+    });
+  }
+
+  void setHighPass(bool enabled) {
+    _commandPort?.send(<String, Object>{
+      'type': 'highPass',
+      'enabled': enabled,
+    });
+  }
+
+  void setDeemphasis(int modeUs) {
+    _commandPort?.send(<String, Object>{
+      'type': 'deemphasis',
+      'modeUs': modeUs,
+    });
+  }
+
   void addIq(Uint8List data) {
     final port = _commandPort;
     if (port == null || data.isEmpty) {
@@ -183,6 +205,18 @@ void _sdrDspWorkerMain(SendPort mainPort) {
           message['enabled'] as bool,
           (message['thresholdDb'] as num).toDouble(),
         );
+        break;
+      case 'noiseBlanker':
+        processor.setNoiseBlanker(
+          message['enabled'] as bool,
+          (message['level'] as num).toDouble(),
+        );
+        break;
+      case 'highPass':
+        processor.setHighPass(message['enabled'] as bool);
+        break;
+      case 'deemphasis':
+        processor.setDeemphasis(message['modeUs'] as int);
         break;
       case 'iq':
         final data = message['data'];
@@ -283,6 +317,18 @@ class _DspProcessor {
     _squelchEnabled = enabled;
     _squelchThresholdDb = thresholdDb;
     _native?.setSquelch(enabled, thresholdDb);
+  }
+
+  void setNoiseBlanker(bool enabled, double level) {
+    _native?.setNoiseBlanker(enabled, level);
+  }
+
+  void setHighPass(bool enabled) {
+    _native?.setHighPass(enabled);
+  }
+
+  void setDeemphasis(int modeUs) {
+    _native?.setDeemphasis(modeUs);
   }
 
   void reset() {
