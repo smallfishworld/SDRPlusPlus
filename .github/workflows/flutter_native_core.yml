@@ -19,6 +19,8 @@ jobs:
         run: cmake -S mobile/native -B build/native-host -G Ninja -DCMAKE_BUILD_TYPE=Release
       - name: Compile native SDR++ DSP bridge
         run: cmake --build build/native-host --parallel 2
+      - name: Run native DSP smoke tests
+        run: ctest --test-dir build/native-host --output-on-failure
 
   android:
     runs-on: ubuntu-latest
