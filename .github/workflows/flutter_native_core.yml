@@ -157,8 +157,8 @@ jobs:
               '#include <dlfcn.h>\n#include <glob.h>',
               '#include <dlfcn.h>\n#ifndef __ANDROID__\n#include <glob.h>\n#endif')
           text = text.replace(
-              '#ifdef _WIN32\n    //http://www.cplusplus.com/forum/windows/17745/',
-              '#if defined(__ANDROID__)\n    (void)path;\n#elif defined(_WIN32)\n    //http://www.cplusplus.com/forum/windows/17745/')
+              '#ifdef _WIN32\n    //http://stackoverflow.com/questions/612097/how-can-i-get-a-list-of-files-in-a-directory-using-c-or-c',
+              '#if defined(__ANDROID__)\n    (void)path;\n#elif defined(_WIN32)\n    //http://stackoverflow.com/questions/612097/how-can-i-get-a-list-of-files-in-a-directory-using-c-or-c')
           modules.write_text(text)
           PY
 
