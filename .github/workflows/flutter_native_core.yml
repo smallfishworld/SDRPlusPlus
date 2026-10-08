@@ -217,6 +217,7 @@ jobs:
           LIBUSB_SO="$DEPS/libusb/android/libs/arm64-v8a/libusb1.0.so"
           export NDK DEPS SOAPY_PREFIX JNI LIBUSB_SO
           bash "$GITHUB_WORKSPACE/tooling/build_android_soapy_airspy.sh"
+          bash "$GITHUB_WORKSPACE/tooling/build_android_soapy_hackrf.sh"
 
       - name: Build official SDR++ DSP native bridge
         shell: bash
