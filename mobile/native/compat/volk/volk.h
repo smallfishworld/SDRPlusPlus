@@ -168,6 +168,35 @@ static inline void volk_32fc_x2_multiply_32fc(
     }
 }
 
+static inline void volk_32fc_32f_multiply_32fc(
+    lv_32fc_t* out,
+    const lv_32fc_t* input,
+    const float* taps,
+    unsigned int count) {
+    for (unsigned int n = 0; n < count; ++n) {
+        out[n].r = input[n].r * taps[n];
+        out[n].i = input[n].i * taps[n];
+    }
+}
+
+static inline void volk_32f_index_max_32u(
+    uint32_t* index,
+    const float* input,
+    unsigned int count) {
+    if (!index) {
+        return;
+    }
+    uint32_t best = 0;
+    float bestValue = count ? input[0] : 0.0f;
+    for (unsigned int n = 1; n < count; ++n) {
+        if (input[n] > bestValue) {
+            bestValue = input[n];
+            best = n;
+        }
+    }
+    *index = best;
+}
+
 static inline void volk_32fc_conjugate_32fc(
     lv_32fc_t* out,
     const lv_32fc_t* in,
