@@ -2477,7 +2477,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         children: <Widget>[
           Expanded(
             child: DropdownButtonFormField<String>(
-              value: dropdownValue,
+              key: ValueKey<String?>(dropdownValue),
+              initialValue: dropdownValue,
               decoration: const InputDecoration(
                 labelText: 'Detected SoapySDR devices',
                 prefixIcon: Icon(Icons.usb_rounded),
