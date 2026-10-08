@@ -876,6 +876,57 @@ public:
             rtlUsb->close();
         }
 
+        std::shared_ptr<rfspace::Client> rfspaceRemote;
+        std::shared_ptr<hermes::Client> hermesRemote;
+        std::shared_ptr<SpectranHTTPClient> spectranRemote;
+        HandlerID spectranFreq = 0;
+        HandlerID spectranRate = 0;
+        {
+            std::lock_guard<std::mutex> lock(remoteMutex);
+            rfspaceRemote = std::move(rfspaceClient);
+            hermesRemote = std::move(hermesClient);
+            spectranRemote = std::move(spectranClient);
+            spectranFreq = spectranFreqHandler;
+            spectranRate = spectranRateHandler;
+            spectranFreqHandler = 0;
+            spectranRateHandler = 0;
+        }
+
+        if (rfspaceRemote) {
+            try {
+                rfspaceRemote->stop();
+                rfspaceRemote->close();
+            }
+            catch (...) {
+            }
+        }
+        if (hermesRemote) {
+            try {
+                hermesRemote->stop();
+                hermesRemote->out.stopReader();
+                hermesRemote->out.stopWriter();
+                hermesRemote->close();
+            }
+            catch (...) {
+            }
+        }
+        if (spectranRemote) {
+            try {
+                if (spectranFreq > 0) {
+                    spectranRemote->onCenterFrequencyChanged.unbind(
+                        spectranFreq);
+                }
+                if (spectranRate > 0) {
+                    spectranRemote->onSamplerateChanged.unbind(
+                        spectranRate);
+                }
+                spectranRemote->streaming(false);
+                spectranRemote->close();
+            }
+            catch (...) {
+            }
+        }
+
         iqStream.stopWriter();
         iqStream.stopReader();
 
@@ -884,6 +935,9 @@ public:
         }
         if (networkThread.joinable()) {
             networkThread.join();
+        }
+        if (hermesThread.joinable()) {
+            hermesThread.join();
         }
         if (consumerThread.joinable()) {
             consumerThread.join();
@@ -940,6 +994,18 @@ public:
             std::lock_guard<std::mutex> lock(rtlUsbMutex);
             return rtlUsbClient && rtlUsbClient->isOpen();
         }
+        if (kindValue == MobileSourceKind::RFspace) {
+            std::lock_guard<std::mutex> lock(remoteMutex);
+            return rfspaceClient && rfspaceClient->isOpen();
+        }
+        if (kindValue == MobileSourceKind::Hermes) {
+            std::lock_guard<std::mutex> lock(remoteMutex);
+            return hermesClient != nullptr && running.load();
+        }
+        if (kindValue == MobileSourceKind::SpectranHttp) {
+            std::lock_guard<std::mutex> lock(remoteMutex);
+            return spectranClient && spectranClient->isOpen();
+        }
         return false;
     }
 
@@ -995,6 +1061,37 @@ public:
             }
             centerFrequency.store(value);
             sdrpp_dsp_set_frequency_offset(engine, 0.0f);
+            sdrpp_dsp_reset(engine);
+            return 0;
+        }
+        if (kindValue == MobileSourceKind::RFspace) {
+            std::lock_guard<std::mutex> lock(remoteMutex);
+            if (!rfspaceClient) {
+                return -1;
+            }
+            rfspaceClient->setFrequency(value);
+            centerFrequency.store(value);
+            sdrpp_dsp_reset(engine);
+            return 0;
+        }
+        if (kindValue == MobileSourceKind::Hermes) {
+            std::lock_guard<std::mutex> lock(remoteMutex);
+            if (!hermesClient) {
+                return -1;
+            }
+            hermesClient->setFrequency(value);
+            hermesClient->autoFilters(value);
+            centerFrequency.store(value);
+            sdrpp_dsp_reset(engine);
+            return 0;
+        }
+        if (kindValue == MobileSourceKind::SpectranHttp) {
+            std::lock_guard<std::mutex> lock(remoteMutex);
+            if (!spectranClient) {
+                return -1;
+            }
+            spectranClient->setCenterFrequency(value);
+            centerFrequency.store(value);
             sdrpp_dsp_reset(engine);
             return 0;
         }
@@ -1441,6 +1538,37 @@ private:
         connected.store(false);
     }
 
+    void hermesForwardLoop() {
+        std::shared_ptr<hermes::Client> client;
+        {
+            std::lock_guard<std::mutex> lock(remoteMutex);
+            client = hermesClient;
+        }
+        if (!client) {
+            return;
+        }
+
+        while (running.load()) {
+            const int count = client->out.read();
+            if (count < 0) {
+                break;
+            }
+
+            const int chunks =
+                std::min<int>(count, STREAM_BUFFER_SIZE);
+            std::memcpy(
+                iqStream.writeBuf,
+                client->out.readBuf,
+                static_cast<std::size_t>(chunks) *
+                    sizeof(dsp::complex_t));
+            client->out.flush();
+
+            if (!iqStream.swap(chunks)) {
+                break;
+            }
+        }
+    }
+
     void syncRemoteState() {
         const auto kindValue =
             static_cast<MobileSourceKind>(sourceKind.load());
@@ -1720,6 +1848,12 @@ private:
         sdrppServerClient;
     std::unique_ptr<mobile::SpyServerSourceClient>
         spyServerClient;
+    std::shared_ptr<rfspace::Client> rfspaceClient;
+    std::shared_ptr<hermes::Client> hermesClient;
+    std::shared_ptr<SpectranHTTPClient> spectranClient;
+    HandlerID spectranFreqHandler = 0;
+    HandlerID spectranRateHandler = 0;
+    std::thread hermesThread;
 
     mutable std::mutex rtlUsbMutex;
     std::unique_ptr<mobile::RtlSdrDirectClient>
