@@ -55,6 +55,7 @@ class RtlTcpClient {
   int get sampleRateHz => _sampleRateHz;
   String get mode => _mode;
   double get bandwidthHz => _bandwidthHz;
+  bool get usingNativeSource => _nativeSourceActive;
 
   Stream<Float32List> get spectrumStream => _dsp.spectrumStream;
   Stream<Uint8List> get audioStream => _dsp.audioStream;
