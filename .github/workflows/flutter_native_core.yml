@@ -106,6 +106,71 @@ jobs:
 
           file             "$GITHUB_WORKSPACE/flutter_ui/android/app/src/main/jniLibs/arm64-v8a/libusb1.0.so"             "$GITHUB_WORKSPACE/flutter_ui/android/app/src/main/jniLibs/arm64-v8a/librtlsdr.so"
 
+      - name: Build Android SoapySDR runtime and RTL-SDR module
+        shell: bash
+        run: |
+          set -euxo pipefail
+          NDK="${ANDROID_NDK_ROOT:-${ANDROID_NDK_HOME:-}}"
+          test -n "$NDK"
+
+          DEPS="$PWD/build/rtl-sdr-usb-deps"
+          SOAPY_PREFIX="$DEPS/soapy-install"
+          RTLSDR_SO="$(find "$DEPS/rtl-sdr-build" -name 'librtlsdr.so' -type f | head -n 1)"
+          test -f "$RTLSDR_SO"
+
+          cd "$DEPS"
+          git clone --depth 1 https://github.com/pothosware/SoapySDR.git soapy
+
+          # Android APKs do not package ELF-style .so.<ABI> names from
+          # jniLibs. Keep an unversioned SONAME and build only the runtime
+          # library required by SDR++ Receiver.
+          python3 - <<'PY'
+          from pathlib import Path
+          top = Path("soapy/CMakeLists.txt")
+          text = top.read_text()
+          for line in (
+              "add_subdirectory(apps)",
+              "add_subdirectory(tests)",
+              "add_subdirectory(docs)",
+              "add_subdirectory(swig)",
+              "add_subdirectory(luajit)",
+          ):
+              text = text.replace(line, "# mobile runtime: " + line)
+          top.write_text(text)
+
+          lib = Path("soapy/lib/CMakeLists.txt")
+          text = lib.read_text()
+          text = text.replace(
+              'set_target_properties(SoapySDR PROPERTIES SOVERSION ${SOAPY_SDR_ABI_VERSION})',
+              '# mobile APK uses unversioned SoapySDR SONAME')
+          text = text.replace(
+              'set_target_properties(SoapySDR PROPERTIES VERSION ${SOAPY_SDR_LIBVER})',
+              '# mobile APK uses unversioned SoapySDR filename')
+          lib.write_text(text)
+          PY
+
+          cmake             -S soapy             -B soapy-build             -G Ninja             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake"             -DANDROID_ABI=arm64-v8a             -DANDROID_PLATFORM=android-24             -DCMAKE_BUILD_TYPE=Release             -DCMAKE_INSTALL_PREFIX="$SOAPY_PREFIX"
+          cmake --build soapy-build --parallel 2
+          cmake --install soapy-build
+
+          git clone --depth 1 https://github.com/pothosware/SoapyRTLSDR.git soapy-rtlsdr
+          cmake             -S soapy-rtlsdr             -B soapy-rtlsdr-build             -G Ninja             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake"             -DANDROID_ABI=arm64-v8a             -DANDROID_PLATFORM=android-24             -DCMAKE_BUILD_TYPE=Release             -DCMAKE_INSTALL_PREFIX="$SOAPY_PREFIX"             -DSoapySDR_DIR="$SOAPY_PREFIX/share/cmake/SoapySDR"             -DRTLSDR_FOUND=TRUE             -DRTLSDR_LIBRARY="$RTLSDR_SO"             -DRTLSDR_INCLUDE_DIR="$DEPS/rtl-sdr/include"
+          cmake --build soapy-rtlsdr-build --parallel 2
+          cmake --install soapy-rtlsdr-build
+
+          SOAPY_SO="$(find "$SOAPY_PREFIX" -name 'libSoapySDR.so' -type f | head -n 1)"
+          SOAPY_RTL="$(find "$SOAPY_PREFIX" -name 'librtlsdrSupport.so' -type f | head -n 1)"
+          test -f "$SOAPY_SO"
+          test -f "$SOAPY_RTL"
+
+          JNI="$GITHUB_WORKSPACE/flutter_ui/android/app/src/main/jniLibs/arm64-v8a"
+          mkdir -p "$JNI"
+          cp "$SOAPY_SO" "$JNI/libSoapySDR.so"
+          cp "$SOAPY_RTL" "$JNI/librtlsdrSupport.so"
+
+          file "$JNI/libSoapySDR.so" "$JNI/librtlsdrSupport.so"
+          readelf -d "$JNI/librtlsdrSupport.so" | grep NEEDED || true
+
       - name: Build official SDR++ DSP native bridge
         shell: bash
         run: |
