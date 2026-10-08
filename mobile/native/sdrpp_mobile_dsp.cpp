@@ -1069,6 +1069,144 @@ int sdrpp_dsp_set_deemphasis(
     }
 }
 
+int sdrpp_dsp_set_ctcss(
+    sdrpp_engine_t engine,
+    int mode,
+    int tone_index) {
+    if (!engine) {
+        return -1;
+    }
+    try {
+        asEngine(engine)->setCtcss(mode, tone_index);
+        return 0;
+    }
+    catch (...) {
+        return -1;
+    }
+}
+
+int sdrpp_dsp_get_ctcss(
+    sdrpp_engine_t engine,
+    int* tone_index,
+    float* tone_hz) {
+    if (!engine) {
+        return 0;
+    }
+    try {
+        return asEngine(engine)->getCtcss(tone_index, tone_hz);
+    }
+    catch (...) {
+        return 0;
+    }
+}
+
+int sdrpp_dsp_set_fm_ifnr(
+    sdrpp_engine_t engine,
+    int enabled,
+    int preset) {
+    if (!engine) {
+        return -1;
+    }
+    try {
+        asEngine(engine)->setFmIfNr(enabled != 0, preset);
+        return 0;
+    }
+    catch (...) {
+        return -1;
+    }
+}
+
+int sdrpp_dsp_set_am_agc(
+    sdrpp_engine_t engine,
+    int carrier_agc,
+    float attack_ms,
+    float decay_ms) {
+    if (!engine) {
+        return -1;
+    }
+    try {
+        asEngine(engine)->setAmAgc(
+            carrier_agc != 0,
+            attack_ms,
+            decay_ms);
+        return 0;
+    }
+    catch (...) {
+        return -1;
+    }
+}
+
+int sdrpp_dsp_set_ssb_agc(
+    sdrpp_engine_t engine,
+    float attack_ms,
+    float decay_ms) {
+    if (!engine) {
+        return -1;
+    }
+    try {
+        asEngine(engine)->setSsbAgc(attack_ms, decay_ms);
+        return 0;
+    }
+    catch (...) {
+        return -1;
+    }
+}
+
+int sdrpp_dsp_set_cw_options(
+    sdrpp_engine_t engine,
+    int tone_hz,
+    float attack_ms,
+    float decay_ms) {
+    if (!engine) {
+        return -1;
+    }
+    try {
+        asEngine(engine)->setCwOptions(
+            tone_hz,
+            attack_ms,
+            decay_ms);
+        return 0;
+    }
+    catch (...) {
+        return -1;
+    }
+}
+
+int sdrpp_dsp_set_nfm_options(
+    sdrpp_engine_t engine,
+    int low_pass) {
+    if (!engine) {
+        return -1;
+    }
+    try {
+        asEngine(engine)->setNfmOptions(low_pass != 0);
+        return 0;
+    }
+    catch (...) {
+        return -1;
+    }
+}
+
+int sdrpp_dsp_set_wfm_options(
+    sdrpp_engine_t engine,
+    int stereo,
+    int low_pass,
+    int rds_enabled) {
+    if (!engine) {
+        return -1;
+    }
+    try {
+        asEngine(engine)->setWfmOptions(
+            stereo != 0,
+            low_pass != 0,
+            rds_enabled != 0);
+        return 0;
+    }
+    catch (...) {
+        return -1;
+    }
+}
+
 int sdrpp_dsp_get_rds(
     sdrpp_engine_t engine,
     char* program_service,
@@ -1127,7 +1265,7 @@ uint32_t sdrpp_dsp_output_sample_rate(void) {
 }
 
 const char* sdrpp_dsp_backend_name(void) {
-    return "SDR++ official DSP core bridge v4 · WFM stereo/RDS + radio post-processing";
+    return "SDR++ official DSP core bridge v5 · CTCSS + FM IFNR + full radio controls";
 }
 
 } // extern "C"
