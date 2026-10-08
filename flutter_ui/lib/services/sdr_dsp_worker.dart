@@ -728,6 +728,115 @@ class SdrDspWorker {
     }
   }
 
+  Future<List<String>> enumerateSoapy({
+    String filter = '',
+  }) async {
+    await start();
+    final commandPort = _commandPort;
+    if (commandPort == null) {
+      return const <String>[];
+    }
+
+    final reply = ReceivePort();
+    commandPort.send(<String, Object>{
+      'type': 'sourceEnumerateSoapy',
+      'filter': filter,
+      'reply': reply.sendPort,
+    });
+    try {
+      final result = await reply.first.timeout(
+        const Duration(seconds: 6),
+      );
+      if (result is List) {
+        return result.whereType<String>().toList(growable: false);
+      }
+      return const <String>[];
+    } on TimeoutException {
+      return const <String>[];
+    } finally {
+      reply.close();
+    }
+  }
+
+  Future<({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
+    String driver,
+    String hardware,
+  })> connectSoapySource({
+    required String deviceArgs,
+    required int sampleRateHz,
+    required int frequencyHz,
+    required double rfBandwidthHz,
+    required double gainDb,
+    required bool agc,
+    int channel = 0,
+  }) async {
+    await start();
+    final commandPort = _commandPort;
+    if (commandPort == null) {
+      return (
+        ok: false,
+        error: 'DSP worker unavailable',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+        driver: '',
+        hardware: '',
+      );
+    }
+
+    final reply = ReceivePort();
+    commandPort.send(<String, Object>{
+      'type': 'sourceConnectSoapy',
+      'deviceArgs': deviceArgs,
+      'sampleRateHz': sampleRateHz,
+      'frequencyHz': frequencyHz,
+      'rfBandwidthHz': rfBandwidthHz,
+      'gainDb': gainDb,
+      'agc': agc,
+      'channel': channel,
+      'reply': reply.sendPort,
+    });
+
+    try {
+      final result = await reply.first.timeout(
+        const Duration(seconds: 15),
+      );
+      if (result is Map<Object?, Object?>) {
+        return (
+          ok: result['ok'] == true,
+          error: result['error'] as String? ?? '',
+          sampleRateHz: result['sampleRateHz'] as int? ?? 0,
+          centerFrequencyHz:
+              result['centerFrequencyHz'] as int? ?? 0,
+          driver: result['driver'] as String? ?? '',
+          hardware: result['hardware'] as String? ?? '',
+        );
+      }
+      return (
+        ok: false,
+        error: 'Invalid SoapySDR source response',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+        driver: '',
+        hardware: '',
+      );
+    } on TimeoutException {
+      return (
+        ok: false,
+        error: 'SoapySDR connection timed out',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+        driver: '',
+        hardware: '',
+      );
+    } finally {
+      reply.close();
+    }
+  }
+
   void disconnectSource() {
     _commandPort?.send(<String, Object>{
       'type': 'sourceDisconnect',
@@ -801,6 +910,13 @@ class SdrDspWorker {
     _commandPort?.send(<String, Object>{
       'type': 'sourceBiasTee',
       'enabled': enabled,
+    });
+  }
+
+  void sourceSetRfBandwidth(double bandwidthHz) {
+    _commandPort?.send(<String, Object>{
+      'type': 'sourceRfBandwidth',
+      'bandwidthHz': bandwidthHz,
     });
   }
 
@@ -1078,6 +1194,38 @@ void _sdrDspWorkerMain(SendPort mainPort) {
           });
         }
         break;
+      case 'sourceEnumerateSoapy':
+        final reply = message['reply'];
+        final devices = processor.enumerateSoapy(
+          message['filter'] as String? ?? '',
+        );
+        if (reply is SendPort) {
+          reply.send(devices);
+        }
+        break;
+      case 'sourceConnectSoapy':
+        final reply = message['reply'];
+        final result = processor.connectSoapySource(
+          deviceArgs: message['deviceArgs'] as String,
+          sampleRateHz: message['sampleRateHz'] as int,
+          frequencyHz: message['frequencyHz'] as int,
+          rfBandwidthHz:
+              (message['rfBandwidthHz'] as num).toDouble(),
+          gainDb: (message['gainDb'] as num).toDouble(),
+          agc: message['agc'] as bool,
+          channel: message['channel'] as int,
+        );
+        if (reply is SendPort) {
+          reply.send(<String, Object>{
+            'ok': result.ok,
+            'error': result.error,
+            'sampleRateHz': result.sampleRateHz,
+            'centerFrequencyHz': result.centerFrequencyHz,
+            'driver': result.driver,
+            'hardware': result.hardware,
+          });
+        }
+        break;
       case 'sourceDisconnect':
         processor.disconnectSource();
         break;
@@ -1129,6 +1277,11 @@ void _sdrDspWorkerMain(SendPort mainPort) {
       case 'sourceBiasTee':
         processor.sourceSetBiasTee(
           message['enabled'] as bool,
+        );
+        break;
+      case 'sourceRfBandwidth':
+        processor.sourceSetRfBandwidth(
+          (message['bandwidthHz'] as num).toDouble(),
         );
         break;
       case 'iq':
@@ -1746,6 +1899,63 @@ class _DspProcessor {
     );
   }
 
+  List<String> enumerateSoapy(String filter) {
+    final source = _source;
+    if (source == null || !source.soapyAvailable) {
+      return const <String>[];
+    }
+    return source.enumerateSoapy(filter: filter);
+  }
+
+  ({
+    bool ok,
+    String error,
+    int sampleRateHz,
+    int centerFrequencyHz,
+    String driver,
+    String hardware,
+  }) connectSoapySource({
+    required String deviceArgs,
+    required int sampleRateHz,
+    required int frequencyHz,
+    required double rfBandwidthHz,
+    required double gainDb,
+    required bool agc,
+    required int channel,
+  }) {
+    final source = _source;
+    if (source == null || !source.soapyAvailable) {
+      return (
+        ok: false,
+        error: 'SoapySDR runtime is unavailable',
+        sampleRateHz: 0,
+        centerFrequencyHz: 0,
+        driver: '',
+        hardware: '',
+      );
+    }
+
+    source.disconnect();
+    final ok = source.connectSoapy(
+      deviceArgs: deviceArgs,
+      sampleRateHz: sampleRateHz,
+      frequencyHz: frequencyHz,
+      rfBandwidthHz: rfBandwidthHz,
+      gainDb: gainDb,
+      agc: agc,
+      channel: channel,
+    );
+    final common = _finishNativeSourceConnect(ok);
+    return (
+      ok: common.ok,
+      error: common.error,
+      sampleRateHz: common.sampleRateHz,
+      centerFrequencyHz: common.centerFrequencyHz,
+      driver: common.ok ? source.soapyDriver : '',
+      hardware: common.ok ? source.soapyHardware : '',
+    );
+  }
+
   void disconnectSource() {
     _sourcePollTimer?.cancel();
     _sourcePollTimer = null;
@@ -1797,6 +2007,10 @@ class _DspProcessor {
 
   void sourceSetBiasTee(bool enabled) {
     _source?.setBiasTee(enabled);
+  }
+
+  void sourceSetRfBandwidth(double bandwidthHz) {
+    _source?.setRfBandwidth(bandwidthHz);
   }
 
   void _pollNativeSource() {
