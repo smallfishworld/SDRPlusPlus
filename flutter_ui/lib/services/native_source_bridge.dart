@@ -40,6 +40,25 @@ typedef _SourceOpenFileDart = int Function(
   int,
 );
 
+typedef _SourceConnectNetworkNative = Int32 Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  Int32,
+  Uint32,
+  Int32,
+  Int32,
+  Uint32,
+);
+typedef _SourceConnectNetworkDart = int Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  int,
+  int,
+  int,
+  int,
+  int,
+);
+
 typedef _SourceVoidNative = Void Function(Pointer<Void>);
 typedef _SourceVoidDart = void Function(Pointer<Void>);
 
@@ -94,6 +113,7 @@ class NativeRtlTcpSourceBridge {
     this._destroy,
     this._connect,
     this._openFile,
+    this._connectNetwork,
     this._getKind,
     this._getSampleRate,
     this._getCenterFrequency,
@@ -124,6 +144,7 @@ class NativeRtlTcpSourceBridge {
   final _SourceDestroyDart _destroy;
   final _SourceConnectDart _connect;
   final _SourceOpenFileDart _openFile;
+  final _SourceConnectNetworkDart _connectNetwork;
   final _SourceBoolDart _getKind;
   final _SourceGetU32Dart _getSampleRate;
   final _SourceGetU32Dart _getCenterFrequency;
@@ -164,6 +185,9 @@ class NativeRtlTcpSourceBridge {
       final openFile = library.lookupFunction<
           _SourceOpenFileNative,
           _SourceOpenFileDart>('sdrpp_source_open_file');
+      final connectNetwork = library.lookupFunction<
+          _SourceConnectNetworkNative,
+          _SourceConnectNetworkDart>('sdrpp_source_connect_network');
       final getKind = library.lookupFunction<
           _SourceBoolNative,
           _SourceBoolDart>('sdrpp_source_get_kind');
@@ -229,6 +253,7 @@ class NativeRtlTcpSourceBridge {
         destroy,
         connect,
         openFile,
+        connectNetwork,
         getKind,
         getSampleRate,
         getCenterFrequency,
@@ -311,6 +336,35 @@ class NativeRtlTcpSourceBridge {
           0;
     } finally {
       calloc.free(nativePath);
+    }
+  }
+
+  bool connectNetwork({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    required int protocol,
+    required int sampleType,
+    int centerFrequencyHz = 0,
+  }) {
+    if (_disposed) {
+      return false;
+    }
+
+    final nativeHost = host.toNativeUtf8();
+    try {
+      return _connectNetwork(
+            _source,
+            nativeHost,
+            port,
+            sampleRateHz,
+            protocol,
+            sampleType,
+            centerFrequencyHz,
+          ) ==
+          0;
+    } finally {
+      calloc.free(nativeHost);
     }
   }
 
