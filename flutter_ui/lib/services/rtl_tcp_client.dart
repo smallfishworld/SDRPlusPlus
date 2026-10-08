@@ -39,6 +39,8 @@ class RtlTcpClient {
   Stream<String> get backendStream => _dsp.backendStream;
   Stream<({String programService, String radioText})> get rdsStream =>
       _dsp.rdsStream;
+  Stream<({int toneIndex, double toneHz})> get ctcssStream =>
+      _dsp.ctcssStream;
   Stream<RtlTcpConnectionState> get stateStream => _stateController.stream;
 
   Future<void> connect({
@@ -206,6 +208,34 @@ class RtlTcpClient {
 
   void setDeemphasis(int modeUs) {
     _dsp.setDeemphasis(modeUs);
+  }
+
+  void setCtcss(int mode, int toneIndex) {
+    _dsp.setCtcss(mode, toneIndex);
+  }
+
+  void setFmIfNr(bool enabled, int preset) {
+    _dsp.setFmIfNr(enabled, preset);
+  }
+
+  void setAmAgc(bool carrier, double attackMs, double decayMs) {
+    _dsp.setAmAgc(carrier, attackMs, decayMs);
+  }
+
+  void setSsbAgc(double attackMs, double decayMs) {
+    _dsp.setSsbAgc(attackMs, decayMs);
+  }
+
+  void setCwOptions(int toneHz, double attackMs, double decayMs) {
+    _dsp.setCwOptions(toneHz, attackMs, decayMs);
+  }
+
+  void setNfmOptions(bool lowPass) {
+    _dsp.setNfmOptions(lowPass);
+  }
+
+  void setWfmOptions(bool stereo, bool lowPass, bool rdsEnabled) {
+    _dsp.setWfmOptions(stereo, lowPass, rdsEnabled);
   }
 
   void _setState(RtlTcpConnectionState value) {
