@@ -1642,6 +1642,101 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     ];
   }
 
+  List<Widget> _sdrppServerSourceControls(bool connected) {
+    return <Widget>[
+      TextField(
+        controller: _sdrppServerHostController,
+        enabled: !connected,
+        decoration: const InputDecoration(
+          labelText: 'SDR++ Server host',
+          prefixIcon: Icon(Icons.dns_outlined),
+          border: OutlineInputBorder(),
+        ),
+      ),
+      const SizedBox(height: 12),
+      TextField(
+        controller: _sdrppServerPortController,
+        enabled: !connected,
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(
+          labelText: 'Port',
+          prefixIcon: Icon(Icons.lan_outlined),
+          border: OutlineInputBorder(),
+        ),
+      ),
+      const SizedBox(height: 10),
+      const Text(
+        'Uses the upstream SDR++ Server wire protocol. The server owns the source sample rate; the mobile runtime follows sample-rate changes automatically and feeds the same native DSP chain.',
+        style: TextStyle(
+          color: Color(0xFF7F91A5),
+          fontSize: 12,
+          height: 1.4,
+        ),
+      ),
+      if (connected &&
+          _client.sourceKind == ReceiverSourceKind.sdrppServer) ...<Widget>[
+        const SizedBox(height: 8),
+        Text(
+          'Server sample rate: ${(_sampleRateHz / 1000000).toStringAsFixed(3)} MSPS',
+          style: const TextStyle(color: Color(0xFF67E8F9)),
+        ),
+      ],
+    ];
+  }
+
+  List<Widget> _spyServerSourceControls(bool connected) {
+    return <Widget>[
+      TextField(
+        controller: _spyServerHostController,
+        enabled: !connected,
+        decoration: const InputDecoration(
+          labelText: 'SpyServer host',
+          prefixIcon: Icon(Icons.dns_outlined),
+          border: OutlineInputBorder(),
+        ),
+      ),
+      const SizedBox(height: 12),
+      TextField(
+        controller: _spyServerPortController,
+        enabled: !connected,
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(
+          labelText: 'Port',
+          prefixIcon: Icon(Icons.lan_outlined),
+          border: OutlineInputBorder(),
+        ),
+      ),
+      const SizedBox(height: 12),
+      Text(
+        'Requested sample rate  ${(_sampleRateHz / 1000000).toStringAsFixed(3)} MSPS',
+      ),
+      Slider(
+        value: _sampleRateHz.toDouble().clamp(250000, 3200000),
+        min: 250000,
+        max: 3200000,
+        divisions: 59,
+        label:
+            '${(_sampleRateHz / 1000000).toStringAsFixed(3)} MSPS',
+        onChanged: connected
+            ? null
+            : (value) {
+                setState(
+                  () => _sampleRateHz =
+                      (value / 50000).round() * 50000,
+                );
+              },
+      ),
+      const Text(
+        'The nearest decimation stage advertised by the SpyServer is selected automatically. Int16 IQ is requested unless the server forces another supported IQ format.',
+        style: TextStyle(
+          color: Color(0xFF7F91A5),
+          fontSize: 12,
+          height: 1.4,
+        ),
+      ),
+    ];
+  }
+
   Future<void> _pickIqFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -1663,9 +1758,104 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       case ReceiverSourceKind.network:
         await _connectNetworkSource();
         break;
+      case ReceiverSourceKind.sdrppServer:
+        await _connectSdrppServerSource();
+        break;
+      case ReceiverSourceKind.spyServer:
+        await _connectSpyServerSource();
+        break;
       case ReceiverSourceKind.rtlTcp:
         await _connect();
         break;
+    }
+  }
+
+  Future<void> _connectSdrppServerSource() async {
+    final port =
+        int.tryParse(_sdrppServerPortController.text.trim()) ?? 50000;
+    setState(() {
+      _connectionError = '';
+      _waterfall.clear();
+    });
+
+    try {
+      await _audio.start();
+      _audio.setVolume(_volume);
+      await _client.connectSdrppServer(
+        host: _sdrppServerHostController.text.trim(),
+        port: port,
+        frequencyHz: _frequencyHz,
+        mode: _mode,
+        bandwidthHz: _bandwidthKhz * 1000,
+      );
+      if (mounted) {
+        setState(() {
+          _sampleRateHz = _client.sampleRateHz;
+          _frequencyHz = _client.frequencyHz;
+          _scanFrequencyHz = _frequencyHz;
+          _tab = 0;
+        });
+      }
+      _client.setSquelch(_squelchEnabled, _squelchDb);
+      _client.setNoiseBlanker(
+        _noiseBlankerEnabled,
+        _noiseBlankerLevel,
+      );
+      _client.setHighPass(_highPassEnabled);
+      _client.setDeemphasis(_deemphasisUs);
+      _applyRadioDetailOptions();
+    } catch (error) {
+      if (mounted) {
+        final message = _client.lastError.isNotEmpty
+            ? _client.lastError
+            : error.toString();
+        setState(() => _connectionError = message);
+      }
+    }
+  }
+
+  Future<void> _connectSpyServerSource() async {
+    final port =
+        int.tryParse(_spyServerPortController.text.trim()) ?? 5555;
+    setState(() {
+      _connectionError = '';
+      _waterfall.clear();
+    });
+
+    try {
+      await _audio.start();
+      _audio.setVolume(_volume);
+      await _client.connectSpyServer(
+        host: _spyServerHostController.text.trim(),
+        port: port,
+        sampleRateHz: _sampleRateHz,
+        frequencyHz: _frequencyHz,
+        mode: _mode,
+        bandwidthHz: _bandwidthKhz * 1000,
+      );
+      if (mounted) {
+        setState(() {
+          _sampleRateHz = _client.sampleRateHz;
+          _frequencyHz = _client.frequencyHz;
+          _scanFrequencyHz = _frequencyHz;
+          _tab = 0;
+        });
+      }
+      _client.setSquelch(_squelchEnabled, _squelchDb);
+      _client.setNoiseBlanker(
+        _noiseBlankerEnabled,
+        _noiseBlankerLevel,
+      );
+      _client.setHighPass(_highPassEnabled);
+      _client.setDeemphasis(_deemphasisUs);
+      _applyRadioDetailOptions();
+    } catch (error) {
+      if (mounted) {
+        final message = _client.lastError.isNotEmpty
+            ? _client.lastError
+            : error.toString();
+        setState(() => _connectionError = message);
+      }
     }
   }
 
