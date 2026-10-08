@@ -1436,17 +1436,22 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                             _client.setDeemphasis(value);
                           },
                         ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'CTCSS, IF noise reduction and RDS controls are being moved into this same native radio chain next.',
-                          style: TextStyle(
-                            color: Color(0xFF718398),
-                            fontSize: 12,
-                            height: 1.4,
-                          ),
-                        ),
+                        const SizedBox(height: 12),
+                        ..._radioDetailControls(),
                       ],
                     ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.extension_rounded),
+                    title: const Text('Sources & modules'),
+                    subtitle: const Text(
+                      'Complete upstream SDR++ source/decoder/plugin mapping',
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: _showModuleCatalog,
                   ),
                 ),
                 const SizedBox(height: 12),
