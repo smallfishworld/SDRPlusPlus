@@ -189,5 +189,42 @@ if(BUILD_TESTING AND NOT ANDROID)
             NAME sdrpp_mobile_sdrpp_server_source_smoke
             COMMAND sdrpp_mobile_sdrpp_server_source_smoke
         )
+
+        add_library(fake_rtlsdr SHARED
+            tests/fake_rtlsdr.cpp
+        )
+        target_compile_features(fake_rtlsdr PRIVATE cxx_std_17)
+        set_target_properties(fake_rtlsdr PROPERTIES
+            OUTPUT_NAME "rtlsdr"
+        )
+
+        add_executable(sdrpp_mobile_rtl_sdr_usb_smoke
+            tests/rtl_sdr_usb_smoke.cpp
+        )
+        target_compile_features(
+            sdrpp_mobile_rtl_sdr_usb_smoke
+            PRIVATE cxx_std_17
+        )
+        target_include_directories(
+            sdrpp_mobile_rtl_sdr_usb_smoke
+            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        target_link_libraries(
+            sdrpp_mobile_rtl_sdr_usb_smoke
+            PRIVATE sdrpp_mobile Threads::Threads
+        )
+        add_dependencies(
+            sdrpp_mobile_rtl_sdr_usb_smoke
+            fake_rtlsdr
+        )
+        add_test(
+            NAME sdrpp_mobile_rtl_sdr_usb_smoke
+            COMMAND sdrpp_mobile_rtl_sdr_usb_smoke
+        )
+        set_tests_properties(
+            sdrpp_mobile_rtl_sdr_usb_smoke
+            PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=$<TARGET_FILE_DIR:fake_rtlsdr>:$ENV{LD_LIBRARY_PATH}"
+        )
     endif()
 endif()
