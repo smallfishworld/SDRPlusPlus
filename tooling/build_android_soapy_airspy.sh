@@ -38,6 +38,8 @@ cmake \
   -DANDROID_PLATFORM=android-24 \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX="$SOAPY_PREFIX" \
+  -DTHREADS_HAVE_PTHREAD_ARG=TRUE \
+  -DTHREADS_PTHREAD_ARG=2 \
   -DLIBUSB_INCLUDE_DIR="$DEPS/libusb/libusb" \
   -DLIBUSB_LIBRARIES="$LIBUSB_SO"
 cmake --build airspy-build --parallel 2
