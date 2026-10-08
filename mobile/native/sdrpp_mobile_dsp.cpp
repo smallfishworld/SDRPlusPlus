@@ -22,6 +22,8 @@
 #include <dsp/multirate/rational_resampler.h>
 #include <dsp/noise_reduction/noise_blanker.h>
 #include <dsp/noise_reduction/power_squelch.h>
+#include "../../decoder_modules/radio/src/rds_demod.h"
+#include "../../decoder_modules/radio/src/rds.h"
 
 namespace {
 
@@ -68,6 +70,9 @@ public:
         }
         if (wfmBroadcast) {
             wfmBroadcast->reset();
+        }
+        if (rdsDemod) {
+            rdsDemod->reset();
         }
         if (audioResampler) {
             audioResampler->reset();
@@ -134,13 +139,30 @@ public:
 
         if (mode == SDRPP_MODE_WFM && wfmBroadcast) {
             ensureStereoCapacity(static_cast<size_t>(ifCount) + 4096);
+            ensureRdsCapacity(
+                static_cast<size_t>(
+                    std::ceil(
+                        (static_cast<double>(ifCount) * 5000.0) /
+                        ifSampleRate)) + 4096);
             int rdsCount = 0;
             int stereoCount = wfmBroadcast->process(
                 ifCount,
                 ifBuffer.data(),
                 stereoDemodBuffer.data(),
                 rdsCount,
-                nullptr);
+                rdsBaseband.data());
+            if (rdsCount > 0 && rdsDemod) {
+                ensureRdsSymbolCapacity(
+                    static_cast<size_t>(rdsCount) + 4096);
+                int symbolCount = rdsDemod->process(
+                    rdsCount,
+                    rdsBaseband.data(),
+                    rdsSoft.data(),
+                    rdsBits.data());
+                if (symbolCount > 0) {
+                    rdsDecoder.process(rdsBits.data(), symbolCount);
+                }
+            }
             if (stereoCount <= 0) {
                 return 0;
             }
@@ -356,6 +378,7 @@ private:
         am.reset();
         nfm.reset();
         wfmBroadcast.reset();
+        rdsDemod.reset();
         ssb.reset();
         cw.reset();
         rfResampler.reset();
@@ -410,9 +433,14 @@ private:
                     ifSampleRate,
                     true,
                     true,
-                    false);
+                    true);
                 wfmBroadcast->out.free();
                 wfmBroadcast->rdsOut.free();
+
+                rdsDemod = std::make_unique<RDSDemod>();
+                rdsDemod->init(nullptr, false);
+                rdsDemod->out.free();
+                rdsDemod->soft.free();
                 break;
             }
 
@@ -500,6 +528,8 @@ private:
         ensureAudioCapacity(65536);
         ensureStereoCapacity(32768);
         ensureStereoAudioCapacity(65536);
+        ensureRdsCapacity(8192);
+        ensureRdsSymbolCapacity(8192);
     }
 
     int demodulate(int count) {
@@ -564,6 +594,62 @@ private:
         }
     }
 
+    void ensureRdsCapacity(size_t count) {
+        if (rdsBaseband.size() < count) {
+            rdsBaseband.resize(count);
+        }
+    }
+
+    void ensureRdsSymbolCapacity(size_t count) {
+        if (rdsSoft.size() < count) {
+            rdsSoft.resize(count);
+        }
+        if (rdsBits.size() < count) {
+            rdsBits.resize(count);
+        }
+    }
+
+    int getRds(
+        char* programService,
+        size_t programServiceCapacity,
+        char* radioText,
+        size_t radioTextCapacity) {
+        if (mode != SDRPP_MODE_WFM || !rdsDemod) {
+            if (programService && programServiceCapacity) {
+                programService[0] = '\0';
+            }
+            if (radioText && radioTextCapacity) {
+                radioText[0] = '\0';
+            }
+            return 0;
+        }
+
+        bool valid = false;
+        std::string ps;
+        std::string rt;
+        if (rdsDecoder.PSNameValid()) {
+            ps = rdsDecoder.getPSName(false);
+            valid = true;
+        }
+        if (rdsDecoder.radioTextValid()) {
+            rt = rdsDecoder.getRadioText(false);
+            valid = true;
+        }
+
+        auto writeString = [](char* dst, size_t cap, const std::string& src) {
+            if (!dst || cap == 0) {
+                return;
+            }
+            const size_t n = std::min(cap - 1, src.size());
+            std::memcpy(dst, src.data(), n);
+            dst[n] = '\0';
+        };
+
+        writeString(programService, programServiceCapacity, ps);
+        writeString(radioText, radioTextCapacity, rt);
+        return valid ? 1 : 0;
+    }
+
     std::mutex mutex;
     uint32_t inputSampleRate = 1024000;
     double ifSampleRate = 50000.0;
@@ -585,6 +671,8 @@ private:
     std::unique_ptr<dsp::demod::AM<float>> am;
     std::unique_ptr<dsp::demod::FM<float>> nfm;
     std::unique_ptr<dsp::demod::BroadcastFM> wfmBroadcast;
+    std::unique_ptr<RDSDemod> rdsDemod;
+    rds::Decoder rdsDecoder;
     std::unique_ptr<dsp::demod::SSB<float>> ssb;
     std::unique_ptr<dsp::demod::CW<float>> cw;
 
@@ -606,6 +694,9 @@ private:
     std::vector<dsp::stereo_t> stereoDemodBuffer;
     std::vector<dsp::stereo_t> stereoAudioBuffer;
     std::vector<dsp::stereo_t> stereoAudioBuffer2;
+    std::vector<dsp::complex_t> rdsBaseband;
+    std::vector<float> rdsSoft;
+    std::vector<uint8_t> rdsBits;
 };
 
 MobileDspEngine* asEngine(sdrpp_engine_t handle) {
@@ -740,6 +831,27 @@ int sdrpp_dsp_set_deemphasis(
     }
 }
 
+int sdrpp_dsp_get_rds(
+    sdrpp_engine_t engine,
+    char* program_service,
+    size_t program_service_capacity,
+    char* radio_text,
+    size_t radio_text_capacity) {
+    if (!engine) {
+        return 0;
+    }
+    try {
+        return asEngine(engine)->getRds(
+            program_service,
+            program_service_capacity,
+            radio_text,
+            radio_text_capacity);
+    }
+    catch (...) {
+        return 0;
+    }
+}
+
 void sdrpp_dsp_reset(sdrpp_engine_t engine) {
     if (!engine) {
         return;
@@ -777,7 +889,7 @@ uint32_t sdrpp_dsp_output_sample_rate(void) {
 }
 
 const char* sdrpp_dsp_backend_name(void) {
-    return "SDR++ official DSP core bridge v3 · WFM stereo + radio post-processing";
+    return "SDR++ official DSP core bridge v4 · WFM stereo/RDS + radio post-processing";
 }
 
 } // extern "C"
