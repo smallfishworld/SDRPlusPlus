@@ -11,6 +11,11 @@ enum RtlTcpConnectionState {
   error,
 }
 
+enum ReceiverSourceKind {
+  rtlTcp,
+  file,
+}
+
 class RtlTcpClient {
   RtlTcpClient() {
     _nativeStateSubscription = _dsp.sourceStateStream.listen((state) {
@@ -48,6 +53,8 @@ class RtlTcpClient {
   String _mode = 'AM';
   double _bandwidthHz = 10000;
   bool _nativeSourceActive = false;
+  ReceiverSourceKind _sourceKind = ReceiverSourceKind.rtlTcp;
+  String _filePath = '';
 
   RtlTcpConnectionState get state => _state;
   String get lastError => _lastError;
@@ -56,6 +63,8 @@ class RtlTcpClient {
   String get mode => _mode;
   double get bandwidthHz => _bandwidthHz;
   bool get usingNativeSource => _nativeSourceActive;
+  ReceiverSourceKind get sourceKind => _sourceKind;
+  String get filePath => _filePath;
 
   Stream<Float32List> get spectrumStream => _dsp.spectrumStream;
   Stream<Uint8List> get audioStream => _dsp.audioStream;
@@ -76,6 +85,8 @@ class RtlTcpClient {
   }) async {
     await disconnect();
     await _dsp.start();
+    _sourceKind = ReceiverSourceKind.rtlTcp;
+    _filePath = '';
 
     _setState(RtlTcpConnectionState.connecting);
     _lastError = '';
@@ -142,6 +153,52 @@ class RtlTcpClient {
     }
   }
 
+  Future<void> openFile({
+    required String path,
+    bool float32Mode = false,
+    int centerFrequencyHz = 0,
+    String mode = 'AM',
+    double bandwidthHz = 10000,
+  }) async {
+    await disconnect();
+    await _dsp.start();
+
+    _setState(RtlTcpConnectionState.connecting);
+    _lastError = '';
+    _sourceKind = ReceiverSourceKind.file;
+    _filePath = path;
+    _mode = mode;
+    _bandwidthHz = bandwidthHz;
+
+    _dsp.setMode(_mode);
+    _dsp.setBandwidth(_bandwidthHz);
+
+    final result = await _dsp.openFileSource(
+      path: path,
+      float32Mode: float32Mode,
+      centerFrequencyHz: centerFrequencyHz,
+    );
+
+    if (!result.ok) {
+      _lastError = result.error;
+      _nativeSourceActive = false;
+      _setState(RtlTcpConnectionState.error);
+      throw StateError(
+        result.error.isEmpty
+            ? 'Could not open IQ file'
+            : result.error,
+      );
+    }
+
+    _nativeSourceActive = true;
+    _sampleRateHz = result.sampleRateHz;
+    _frequencyHz = result.centerFrequencyHz;
+    _dsp.setSampleRate(_sampleRateHz);
+    _dsp.setMode(_mode);
+    _dsp.setBandwidth(_bandwidthHz);
+    _setState(RtlTcpConnectionState.connected);
+  }
+
   Future<void> disconnect() async {
     if (_nativeSourceActive) {
       _dsp.disconnectSource();
@@ -170,6 +227,9 @@ class RtlTcpClient {
   }
 
   void setSampleRate(int sampleRateHz) {
+    if (_sourceKind == ReceiverSourceKind.file) {
+      return;
+    }
     _sampleRateHz = sampleRateHz;
     _dsp.setSampleRate(sampleRateHz);
     if (_nativeSourceActive) {
