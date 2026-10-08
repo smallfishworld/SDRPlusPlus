@@ -9,7 +9,11 @@ add_library(sdrpp_mobile SHARED
     rtl_sdr_direct.cpp
     ../../decoder_modules/radio/src/rds.cpp
     ../../source_modules/rtl_tcp_source/src/rtl_tcp_client.cpp
+    ../../source_modules/rfspace_source/src/rfspace_client.cpp
+    ../../source_modules/hermes_source/src/hermes.cpp
+    ../../source_modules/spectran_http_source/src/spectran_http_client.cpp
     ../../core/src/utils/net.cpp
+    ../../core/src/utils/proto/http.cpp
 )
 
 target_compile_features(sdrpp_mobile PRIVATE cxx_std_17)
@@ -31,6 +35,9 @@ target_include_directories(sdrpp_mobile PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../source_modules/rtl_tcp_source/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../source_modules/file_source/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../source_modules/spyserver_source/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../source_modules/rfspace_source/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../source_modules/hermes_source/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../source_modules/spectran_http_source/src
 )
 
 if(MSVC)
