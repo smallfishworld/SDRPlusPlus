@@ -306,6 +306,19 @@ public:
         }
     }
 
+    int getRdsLocked(
+        char* programService,
+        size_t programServiceCapacity,
+        char* radioText,
+        size_t radioTextCapacity) {
+        std::lock_guard<std::mutex> lock(mutex);
+        return getRdsLocked(
+            programService,
+            programServiceCapacity,
+            radioText,
+            radioTextCapacity);
+    }
+
 private:
     static double ifRateForMode(sdrpp_mode_t value) {
         // Keep the bridge at or above 48 kHz so SDR++'s RationalResampler is
