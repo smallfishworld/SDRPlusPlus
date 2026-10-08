@@ -105,9 +105,11 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   ];
 
   static const List<int> _tuningSteps = <int>[
+    10,
     100,
     500,
     1000,
+    2500,
     5000,
     8330,
     10000,
@@ -717,13 +719,31 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         setState(() {
           _mode = mode;
           _bandwidthKhz = switch (mode) {
-            'WFM' => 180,
+            'WFM' => 150,
             'NFM' => 12.5,
-            'USB' || 'LSB' => 2.7,
-            'CW' => 0.8,
-            'DSB' => 6.0,
+            'AM' => 10,
+            'USB' || 'LSB' => 2.8,
+            'DSB' => 4.6,
+            'CW' => 0.2,
+            'RAW' => 48,
             _ => 10,
           };
+          _tuningStepHz = switch (mode) {
+            'WFM' => 100000,
+            'NFM' => 2500,
+            'AM' => 1000,
+            'USB' || 'LSB' || 'DSB' => 100,
+            'CW' => 10,
+            'RAW' => 2500,
+            _ => 1000,
+          };
+          if (mode != 'NFM') {
+            _ctcssMode = 0;
+            _detectedCtcssHz = 0;
+          }
+          if (mode != 'NFM' && mode != 'WFM') {
+            _fmIfNrEnabled = false;
+          }
         });
         _client.setMode(mode);
         _client.setBandwidth(_bandwidthKhz * 1000);
@@ -1900,7 +1920,16 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   }
 
   Future<void> _showBandwidthSheet() async {
-    const options = <double>[0.5, 0.8, 1.8, 2.4, 2.7, 3.0, 6.0, 8.0, 10.0, 12.5, 15.0, 25.0, 50.0, 100.0, 150.0, 180.0, 200.0];
+    final options = switch (_mode) {
+      'CW' => <double>[0.05, 0.1, 0.2, 0.3, 0.5],
+      'USB' || 'LSB' => <double>[0.5, 1.0, 1.8, 2.4, 2.8, 3.0, 4.0, 6.0, 8.0, 12.0],
+      'DSB' => <double>[1.0, 2.4, 4.6, 6.0, 8.0, 10.0, 12.0],
+      'AM' => <double>[1.0, 2.4, 5.0, 6.0, 8.0, 10.0, 12.5, 15.0],
+      'NFM' => <double>[1.0, 2.5, 5.0, 6.25, 8.33, 10.0, 12.5, 15.0, 20.0, 25.0, 50.0],
+      'WFM' => <double>[50.0, 100.0, 150.0, 180.0, 200.0, 250.0],
+      'RAW' => <double>[48.0],
+      _ => <double>[10.0],
+    };
     final value = await showModalBottomSheet<double>(
       context: context,
       showDragHandle: true,
