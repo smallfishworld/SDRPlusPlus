@@ -58,8 +58,17 @@ class SdrModuleCatalog {
       name: 'RTL-SDR USB',
       kind: SdrModuleKind.source,
       upstreamPath: 'source_modules/rtl_sdr_source',
-      support: SdrModuleSupport.nativeSdk,
-      description: 'Direct RTL-SDR USB source through librtlsdr.',
+      support: SdrModuleSupport.active,
+      description:
+          'Direct Android USB-host RTL-SDR runtime through packaged librtlsdr/libusb.',
+      capabilities: <String>[
+        'Android USB permission bridge',
+        'librtlsdr direct system-FD open',
+        'frequency and sample-rate control',
+        'gain / AGC / PPM',
+        'direct sampling / offset tuning / Bias-T',
+        'native SDR++ DSP integration',
+      ],
     ),
     SdrModuleDescriptor(
       id: 'file_source',
