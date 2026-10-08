@@ -27,6 +27,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   StreamSubscription<Float32List>? _spectrumSubscription;
   StreamSubscription<Uint8List>? _audioSubscription;
   StreamSubscription<String>? _backendSubscription;
+  StreamSubscription<({String programService, String radioText})>?
+      _rdsSubscription;
   StreamSubscription<RtlTcpConnectionState>? _stateSubscription;
   Timer? _scannerTimer;
   Timer? _retuneAudioTimer;
@@ -61,6 +63,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       RtlTcpConnectionState.disconnected;
   String _connectionError = '';
   String _dspBackend = 'Detecting DSP backend…';
+  String _rdsProgramService = '';
+  String _rdsRadioText = '';
 
   Float32List _spectrum = Float32List(256);
   final List<Float32List> _waterfall = <Float32List>[];
@@ -143,6 +147,15 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       }
       setState(() => _dspBackend = name);
     });
+    _rdsSubscription = _client.rdsStream.listen((rds) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _rdsProgramService = rds.programService;
+        _rdsRadioText = rds.radioText;
+      });
+    });
     _stateSubscription = _client.stateStream.listen((state) {
       if (!mounted) {
         return;
@@ -162,6 +175,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     unawaited(_spectrumSubscription?.cancel());
     unawaited(_audioSubscription?.cancel());
     unawaited(_backendSubscription?.cancel());
+    unawaited(_rdsSubscription?.cancel());
     unawaited(_stateSubscription?.cancel());
     unawaited(_client.dispose());
     unawaited(_audio.dispose());
@@ -292,6 +306,12 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
           _appHeader('Receiver'),
           const SizedBox(height: 14),
           _frequencyCard(),
+          if (_mode == 'WFM' &&
+              (_rdsProgramService.isNotEmpty ||
+                  _rdsRadioText.isNotEmpty)) ...<Widget>[
+            const SizedBox(height: 10),
+            _rdsCard(),
+          ],
           const SizedBox(height: 14),
           Expanded(child: _spectrumCard()),
           const SizedBox(height: 14),
@@ -406,23 +426,26 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-                        if (subtitle.isNotEmpty) ...<Widget>[
-                          const SizedBox(width: 8),
-                          const Text(
-                            '·',
-                            style: TextStyle(color: Color(0xFF526377)),
-                          ),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              subtitle,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF8EA0B5),
+                        if (subtitle.isNotEmpty || _rdsProgramService.isNotEmpty)
+                          ...<Widget>[
+                            const SizedBox(width: 8),
+                            const Text(
+                              '·',
+                              style: TextStyle(color: Color(0xFF526377)),
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                _rdsProgramService.isNotEmpty
+                                    ? _rdsProgramService
+                                    : subtitle,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xFF8EA0B5),
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
                       ],
                     ),
                   ],
@@ -439,6 +462,60 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _rdsCard() {
+    if (_mode != 'WFM' ||
+        (_rdsProgramService.isEmpty && _rdsRadioText.isEmpty)) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Row(
+          children: <Widget>[
+            const Icon(
+              Icons.radio_rounded,
+              color: Color(0xFF67E8F9),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  if (_rdsProgramService.isNotEmpty)
+                    Text(
+                      _rdsProgramService,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  if (_rdsRadioText.isNotEmpty)
+                    Text(
+                      _rdsRadioText,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF8193A7),
+                        fontSize: 12,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const Text(
+              'RDS',
+              style: TextStyle(
+                color: Color(0xFF67E8F9),
+                fontWeight: FontWeight.w800,
+                fontSize: 11,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1579,6 +1656,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     setState(() {
       _frequencyHz = clamped;
       _scanFrequencyHz = clamped;
+      _rdsProgramService = '';
+      _rdsRadioText = '';
     });
     _client.setFrequency(clamped);
 
