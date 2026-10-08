@@ -545,6 +545,8 @@ private:
         stereoHighPass.reset();
         noiseBlanker.reset();
         powerSquelch.reset();
+        fmIfNr.reset();
+        ctcss.reset();
         audioResampler.reset();
         am.reset();
         nfm.reset();
@@ -571,15 +573,22 @@ private:
         powerSquelch->init(nullptr, squelchLevelDb);
         powerSquelch->out.free();
 
+        fmIfNr =
+            std::make_unique<dsp::noise_reduction::FMIF>();
+        fmIfNr->init(nullptr, ifNrBins(fmIfNrPreset));
+        fmIfNr->out.free();
+
         switch (mode) {
             case SDRPP_MODE_AM: {
                 am = std::make_unique<dsp::demod::AM<float>>();
-                const double attack = 50.0 / ifSampleRate;
-                const double decay = 5.0 / ifSampleRate;
+                const double attack = amAgcAttackMs / ifSampleRate;
+                const double decay = amAgcDecayMs / ifSampleRate;
                 const double dcRate = 100.0 / ifSampleRate;
                 am->init(
                     nullptr,
-                    dsp::demod::AM<float>::AGCMode::AUDIO,
+                    amCarrierAgc
+                        ? dsp::demod::AM<float>::AGCMode::CARRIER
+                        : dsp::demod::AM<float>::AGCMode::AUDIO,
                     bandwidth,
                     attack,
                     decay,
@@ -591,7 +600,7 @@ private:
 
             case SDRPP_MODE_NFM: {
                 nfm = std::make_unique<dsp::demod::FM<float>>();
-                nfm->init(nullptr, ifSampleRate, bandwidth, true);
+                nfm->init(nullptr, ifSampleRate, bandwidth, nfmLowPass);
                 nfm->out.free();
                 break;
             }
@@ -602,9 +611,9 @@ private:
                     nullptr,
                     bandwidth / 2.0,
                     ifSampleRate,
-                    true,
-                    true,
-                    true);
+                    wfmStereo,
+                    wfmLowPass,
+                    wfmRdsEnabled);
                 wfmBroadcast->out.free();
                 wfmBroadcast->rdsOut.free();
 
@@ -626,8 +635,8 @@ private:
                 else if (mode == SDRPP_MODE_LSB) {
                     ssbMode = dsp::demod::SSB<float>::Mode::LSB;
                 }
-                const double attack = 50.0 / ifSampleRate;
-                const double decay = 5.0 / ifSampleRate;
+                const double attack = ssbAgcAttackMs / ifSampleRate;
+                const double decay = ssbAgcDecayMs / ifSampleRate;
                 ssb->init(
                     nullptr,
                     ssbMode,
@@ -641,9 +650,9 @@ private:
 
             case SDRPP_MODE_CW: {
                 cw = std::make_unique<dsp::demod::CW<float>>();
-                const double attack = 100.0 / ifSampleRate;
-                const double decay = 5.0 / ifSampleRate;
-                cw->init(nullptr, 800.0, attack, decay, ifSampleRate);
+                const double attack = cwAgcAttackMs / ifSampleRate;
+                const double decay = cwAgcDecayMs / ifSampleRate;
+                cw->init(nullptr, cwToneHz, attack, decay, ifSampleRate);
                 cw->out.free();
                 break;
             }
@@ -691,6 +700,30 @@ private:
         stereoHighPass->init(nullptr, hpTaps);
         stereoHighPass->out.free();
 
+        ctcss =
+            std::make_unique<dsp::noise_reduction::CTCSSSquelch>();
+        ctcss->init(nullptr, kOutputSampleRate);
+        if (ctcssMode == 1) {
+            ctcss->setRequiredTone(
+                dsp::noise_reduction::CTCSS_TONE_NONE);
+        }
+        else if (ctcssMode == 2) {
+            if (ctcssToneIndex == -2) {
+                ctcss->setRequiredTone(
+                    dsp::noise_reduction::CTCSS_TONE_ANY);
+            }
+            else {
+                const int maxTone =
+                    dsp::noise_reduction::_CTCSS_TONE_COUNT - 1;
+                ctcssToneIndex =
+                    std::clamp(ctcssToneIndex, 0, maxTone);
+                ctcss->setRequiredTone(
+                    static_cast<dsp::noise_reduction::CTCSSTone>(
+                        ctcssToneIndex));
+            }
+        }
+        ctcss->out.free();
+
         // Working buffers. They grow on demand without being recreated for
         // every TCP packet.
         ensureInputCapacity(32768);
@@ -699,6 +732,7 @@ private:
         ensureAudioCapacity(65536);
         ensureStereoCapacity(32768);
         ensureStereoAudioCapacity(65536);
+        ensureCtcssCapacity(65536);
         ensureRdsCapacity(8192);
         ensureRdsSymbolCapacity(8192);
     }
@@ -762,6 +796,15 @@ private:
         }
         if (stereoAudioBuffer2.size() < count) {
             stereoAudioBuffer2.resize(count);
+        }
+    }
+
+    void ensureCtcssCapacity(size_t count) {
+        if (ctcssInputBuffer.size() < count) {
+            ctcssInputBuffer.resize(count);
+        }
+        if (ctcssOutputBuffer.size() < count) {
+            ctcssOutputBuffer.resize(count);
         }
     }
 
@@ -834,10 +877,30 @@ private:
     bool highPassEnabled = false;
     int deemphasisUs = 50;
 
+    int ctcssMode = 0;
+    int ctcssToneIndex = -2;
+    bool fmIfNrEnabled = false;
+    int fmIfNrPreset = 1;
+
+    bool amCarrierAgc = false;
+    float amAgcAttackMs = 50.0f;
+    float amAgcDecayMs = 5.0f;
+    float ssbAgcAttackMs = 50.0f;
+    float ssbAgcDecayMs = 5.0f;
+    int cwToneHz = 800;
+    float cwAgcAttackMs = 100.0f;
+    float cwAgcDecayMs = 5.0f;
+    bool nfmLowPass = true;
+    bool wfmStereo = true;
+    bool wfmLowPass = true;
+    bool wfmRdsEnabled = true;
+
     std::unique_ptr<dsp::multirate::RationalResampler<dsp::complex_t>>
         rfResampler;
     std::unique_ptr<dsp::noise_reduction::NoiseBlanker> noiseBlanker;
     std::unique_ptr<dsp::noise_reduction::PowerSquelch> powerSquelch;
+    std::unique_ptr<dsp::noise_reduction::FMIF> fmIfNr;
+    std::unique_ptr<dsp::noise_reduction::CTCSSSquelch> ctcss;
 
     std::unique_ptr<dsp::demod::AM<float>> am;
     std::unique_ptr<dsp::demod::FM<float>> nfm;
@@ -865,6 +928,8 @@ private:
     std::vector<dsp::stereo_t> stereoDemodBuffer;
     std::vector<dsp::stereo_t> stereoAudioBuffer;
     std::vector<dsp::stereo_t> stereoAudioBuffer2;
+    std::vector<dsp::stereo_t> ctcssInputBuffer;
+    std::vector<dsp::stereo_t> ctcssOutputBuffer;
     std::vector<dsp::complex_t> rdsBaseband;
     std::vector<float> rdsSoft;
     std::vector<uint8_t> rdsBits;
