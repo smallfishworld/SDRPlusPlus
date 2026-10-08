@@ -2,6 +2,7 @@
 #include <volk/volk.h>
 #include <cstring>
 #include <utils/flog.h>
+#include <stdexcept>
 
 using namespace std::chrono_literals;
 
