@@ -194,6 +194,18 @@ class RtlTcpClient {
     _dsp.setSquelch(enabled, thresholdDb);
   }
 
+  void setNoiseBlanker(bool enabled, double level) {
+    _dsp.setNoiseBlanker(enabled, level);
+  }
+
+  void setHighPass(bool enabled) {
+    _dsp.setHighPass(enabled);
+  }
+
+  void setDeemphasis(int modeUs) {
+    _dsp.setDeemphasis(modeUs);
+  }
+
   void _setState(RtlTcpConnectionState value) {
     _state = value;
     if (!_stateController.isClosed) {
