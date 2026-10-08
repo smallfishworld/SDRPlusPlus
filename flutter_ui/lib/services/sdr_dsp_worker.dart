@@ -17,10 +17,15 @@ class SdrDspWorker {
       StreamController<Uint8List>.broadcast();
   final StreamController<String> _backendController =
       StreamController<String>.broadcast();
+  final StreamController<({String programService, String radioText})>
+      _rdsController =
+      StreamController<({String programService, String radioText})>.broadcast();
 
   Stream<Float32List> get spectrumStream => _spectrumController.stream;
   Stream<Uint8List> get audioStream => _audioController.stream;
   Stream<String> get backendStream => _backendController.stream;
+  Stream<({String programService, String radioText})> get rdsStream =>
+      _rdsController.stream;
 
   Future<void> start() async {
     if (_commandPort != null) {
@@ -48,6 +53,15 @@ class SdrDspWorker {
         final name = message['name'];
         if (name is String && !_backendController.isClosed) {
           _backendController.add(name);
+        }
+        return;
+      }
+
+      if (type == 'rds') {
+        final ps = message['programService'];
+        final rt = message['radioText'];
+        if (ps is String && rt is String && !_rdsController.isClosed) {
+          _rdsController.add((programService: ps, radioText: rt));
         }
         return;
       }
@@ -170,6 +184,7 @@ class SdrDspWorker {
     await _spectrumController.close();
     await _audioController.close();
     await _backendController.close();
+    await _rdsController.close();
   }
 }
 
@@ -256,6 +271,9 @@ class _DspProcessor {
   double bandwidthHz = 10000;
 
   int _fftSkipSamples = 0;
+  DateTime _lastRdsPoll = DateTime.fromMillisecondsSinceEpoch(0);
+  String _lastRdsPs = '';
+  String _lastRdsText = '';
 
   double _sumI = 0;
   double _sumQ = 0;
@@ -334,6 +352,8 @@ class _DspProcessor {
   void reset() {
     _fftSkipSamples = 0;
     _native?.reset();
+    _lastRdsPs = '';
+    _lastRdsText = '';
     resetDemodState();
   }
 
@@ -383,6 +403,25 @@ class _DspProcessor {
           'type': 'audio',
           'data': TransferableTypedData.fromList(<Uint8List>[pcm]),
         });
+      }
+
+      if (mode == 'WFM') {
+        final now = DateTime.now();
+        if (now.difference(_lastRdsPoll).inMilliseconds >= 500) {
+          _lastRdsPoll = now;
+          final rds = native.getRds();
+          if (rds != null &&
+              (rds.programService != _lastRdsPs ||
+                  rds.radioText != _lastRdsText)) {
+            _lastRdsPs = rds.programService;
+            _lastRdsText = rds.radioText;
+            mainPort.send(<String, Object>{
+              'type': 'rds',
+              'programService': _lastRdsPs,
+              'radioText': _lastRdsText,
+            });
+          }
+        }
       }
       return;
     }
