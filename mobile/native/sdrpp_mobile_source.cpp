@@ -1986,6 +1986,53 @@ int sdrpp_source_connect_spyserver(
         frequency_hz);
 }
 
+int sdrpp_source_connect_rfspace(
+    sdrpp_source_t source,
+    const char* host,
+    int port,
+    uint32_t sample_rate_hz,
+    uint32_t frequency_hz,
+    int gain_db) {
+    return source
+        ? asSource(source)->connectRFspace(
+              host,
+              port,
+              sample_rate_hz,
+              frequency_hz,
+              gain_db)
+        : -1;
+}
+
+int sdrpp_source_connect_hermes(
+    sdrpp_source_t source,
+    const char* host,
+    int port,
+    uint32_t sample_rate_hz,
+    uint32_t frequency_hz,
+    int gain_db) {
+    return source
+        ? asSource(source)->connectHermes(
+              host,
+              port,
+              sample_rate_hz,
+              frequency_hz,
+              gain_db)
+        : -1;
+}
+
+int sdrpp_source_connect_spectran_http(
+    sdrpp_source_t source,
+    const char* host,
+    int port,
+    uint32_t frequency_hz) {
+    return source
+        ? asSource(source)->connectSpectranHttp(
+              host,
+              port,
+              frequency_hz)
+        : -1;
+}
+
 int sdrpp_source_connect_rtl_sdr_fd(
     sdrpp_source_t source,
     int system_fd,
