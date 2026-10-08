@@ -70,6 +70,48 @@ SDRPP_MOBILE_API int sdrpp_dsp_set_deemphasis(
     sdrpp_engine_t engine,
     int mode_us);
 
+SDRPP_MOBILE_API int sdrpp_dsp_set_ctcss(
+    sdrpp_engine_t engine,
+    int mode,
+    int tone_index);
+
+SDRPP_MOBILE_API int sdrpp_dsp_get_ctcss(
+    sdrpp_engine_t engine,
+    int* tone_index,
+    float* tone_hz);
+
+SDRPP_MOBILE_API int sdrpp_dsp_set_fm_ifnr(
+    sdrpp_engine_t engine,
+    int enabled,
+    int preset);
+
+SDRPP_MOBILE_API int sdrpp_dsp_set_am_agc(
+    sdrpp_engine_t engine,
+    int carrier_agc,
+    float attack_ms,
+    float decay_ms);
+
+SDRPP_MOBILE_API int sdrpp_dsp_set_ssb_agc(
+    sdrpp_engine_t engine,
+    float attack_ms,
+    float decay_ms);
+
+SDRPP_MOBILE_API int sdrpp_dsp_set_cw_options(
+    sdrpp_engine_t engine,
+    int tone_hz,
+    float attack_ms,
+    float decay_ms);
+
+SDRPP_MOBILE_API int sdrpp_dsp_set_nfm_options(
+    sdrpp_engine_t engine,
+    int low_pass);
+
+SDRPP_MOBILE_API int sdrpp_dsp_set_wfm_options(
+    sdrpp_engine_t engine,
+    int stereo,
+    int low_pass,
+    int rds_enabled);
+
 /*
  * Read current RDS Program Service / RadioText strings.
  * Returns 1 when at least one field is currently valid, 0 otherwise.
