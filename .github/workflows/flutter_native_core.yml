@@ -38,7 +38,7 @@ jobs:
       - name: Generate Android runner
         run: flutter create --org com.smallfishworld --project-name sdrpp_flutter --platforms=android .
 
-      - name: Enable Android network access
+      - name: Enable Android network and USB host access
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -49,9 +49,18 @@ jobs:
                   '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
                   '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
                   '    <uses-permission android:name="android.permission.INTERNET" />')
+          if "android.hardware.usb.host" not in s:
+              s = s.replace(
+                  '<application',
+                  '    <uses-feature android:name="android.hardware.usb.host" android:required="false" />\n\n'
+                  '    <application',
+                  1)
           s = s.replace('android:label="sdrpp_flutter"', 'android:label="SDR++ Receiver"')
           p.write_text(s)
           PY
+
+          mkdir -p android/app/src/main/kotlin/com/smallfishworld/sdrpp_flutter
+          cp ../tooling/flutter_android/MainActivity.kt              android/app/src/main/kotlin/com/smallfishworld/sdrpp_flutter/MainActivity.kt
 
       - name: Generate SDR++ Receiver branding
         run: |
@@ -60,6 +69,42 @@ jobs:
 
       - name: Get Flutter dependencies
         run: flutter pub get
+
+      - name: Build Android RTL-SDR USB dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          NDK="${ANDROID_NDK_ROOT:-${ANDROID_NDK_HOME:-}}"
+          test -n "$NDK"
+
+          DEPS="$PWD/build/rtl-sdr-usb-deps"
+          rm -rf "$DEPS"
+          mkdir -p "$DEPS"
+          cd "$DEPS"
+
+          git clone --depth 1 --branch v1.0.27             https://github.com/libusb/libusb.git libusb
+
+          pushd libusb/android/jni
+          "$NDK/ndk-build"             NDK_PROJECT_PATH=..             APP_ABI=arm64-v8a             APP_PLATFORM=android-24
+          popd
+
+          LIBUSB_SO="$DEPS/libusb/android/libs/arm64-v8a/libusb1.0.so"
+          test -f "$LIBUSB_SO"
+
+          git clone --depth 1             https://github.com/AlexandreRouma/rtl-sdr.git rtl-sdr
+
+          cmake             -S rtl-sdr             -B rtl-sdr-build             -G Ninja             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake"             -DANDROID_ABI=arm64-v8a             -DANDROID_PLATFORM=android-24             -DCMAKE_BUILD_TYPE=Release             -DBUILD_UTILITIES=OFF             -DINSTALL_UDEV_RULES=OFF             -DLIBUSB_LIBRARIES="$LIBUSB_SO"             -DLIBUSB_INCLUDE_DIRS="$DEPS/libusb/libusb"             -DLIBUSB_INCLUDE_DIR="$DEPS/libusb/libusb"             -DLIBUSB_FOUND=1
+          cmake --build rtl-sdr-build --parallel 2
+
+          RTLSDR_SO="$(find rtl-sdr-build -name 'librtlsdr.so' -type f | head -n 1)"
+          test -n "$RTLSDR_SO"
+          test -f "$RTLSDR_SO"
+
+          mkdir -p "$GITHUB_WORKSPACE/flutter_ui/android/app/src/main/jniLibs/arm64-v8a"
+          cp "$LIBUSB_SO"              "$GITHUB_WORKSPACE/flutter_ui/android/app/src/main/jniLibs/arm64-v8a/libusb1.0.so"
+          cp "$RTLSDR_SO"              "$GITHUB_WORKSPACE/flutter_ui/android/app/src/main/jniLibs/arm64-v8a/librtlsdr.so"
+
+          file             "$GITHUB_WORKSPACE/flutter_ui/android/app/src/main/jniLibs/arm64-v8a/libusb1.0.so"             "$GITHUB_WORKSPACE/flutter_ui/android/app/src/main/jniLibs/arm64-v8a/librtlsdr.so"
 
       - name: Build official SDR++ DSP native bridge
         shell: bash
