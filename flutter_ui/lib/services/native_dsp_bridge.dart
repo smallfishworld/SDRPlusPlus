@@ -194,6 +194,8 @@ class NativeDspBridge {
   final _ProcessDart _process;
   final String backendName;
 
+  Pointer<Void> get nativeHandle => _handle;
+
   late final Pointer<Uint8> _iq;
   late final Pointer<Int16> _pcm;
   bool _disposed = false;
