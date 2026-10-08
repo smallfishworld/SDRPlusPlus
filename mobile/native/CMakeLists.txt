@@ -4,10 +4,16 @@ project(sdrpp_mobile_native LANGUAGES CXX)
 
 add_library(sdrpp_mobile SHARED
     sdrpp_mobile_dsp.cpp
+    sdrpp_mobile_source.cpp
     ../../decoder_modules/radio/src/rds.cpp
+    ../../source_modules/rtl_tcp_source/src/rtl_tcp_client.cpp
+    ../../core/src/utils/net.cpp
 )
 
 target_compile_features(sdrpp_mobile PRIVATE cxx_std_17)
+
+find_package(Threads REQUIRED)
+target_link_libraries(sdrpp_mobile PRIVATE Threads::Threads)
 
 # The compatibility include must come before SDR++ core/src so <volk/volk.h>
 # resolves to the portable bridge shim. The actual DSP implementation is
@@ -17,6 +23,7 @@ target_include_directories(sdrpp_mobile PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../core/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../decoder_modules/radio/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../source_modules/rtl_tcp_source/src
 )
 
 if(MSVC)
@@ -27,6 +34,10 @@ endif()
 
 if(ANDROID)
     target_link_libraries(sdrpp_mobile PRIVATE log)
+endif()
+
+if(WIN32)
+    target_link_libraries(sdrpp_mobile PRIVATE ws2_32 iphlpapi)
 endif()
 
 set_target_properties(sdrpp_mobile PROPERTIES
