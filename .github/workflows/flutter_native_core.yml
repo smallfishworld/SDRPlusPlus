@@ -73,6 +73,9 @@ jobs:
           cp build/sdrpp-native-arm64/libsdrpp_mobile.so              android/app/src/main/jniLibs/arm64-v8a/libsdrpp_mobile.so
           file android/app/src/main/jniLibs/arm64-v8a/libsdrpp_mobile.so
 
+      - name: Verify complete SDR++ module mapping
+        run: python3 ../tooling/check_module_catalog.py
+
       - name: Analyze Flutter app
         run: flutter analyze lib
 
