@@ -20,12 +20,17 @@ class SdrDspWorker {
   final StreamController<({String programService, String radioText})>
       _rdsController =
       StreamController<({String programService, String radioText})>.broadcast();
+  final StreamController<({int toneIndex, double toneHz})>
+      _ctcssController =
+      StreamController<({int toneIndex, double toneHz})>.broadcast();
 
   Stream<Float32List> get spectrumStream => _spectrumController.stream;
   Stream<Uint8List> get audioStream => _audioController.stream;
   Stream<String> get backendStream => _backendController.stream;
   Stream<({String programService, String radioText})> get rdsStream =>
       _rdsController.stream;
+  Stream<({int toneIndex, double toneHz})> get ctcssStream =>
+      _ctcssController.stream;
 
   Future<void> start() async {
     if (_commandPort != null) {
@@ -62,6 +67,20 @@ class SdrDspWorker {
         final rt = message['radioText'];
         if (ps is String && rt is String && !_rdsController.isClosed) {
           _rdsController.add((programService: ps, radioText: rt));
+        }
+        return;
+      }
+
+      if (type == 'ctcss') {
+        final toneIndex = message['toneIndex'];
+        final toneHz = message['toneHz'];
+        if (toneIndex is int &&
+            toneHz is num &&
+            !_ctcssController.isClosed) {
+          _ctcssController.add((
+            toneIndex: toneIndex,
+            toneHz: toneHz.toDouble(),
+          ));
         }
         return;
       }
@@ -157,6 +176,64 @@ class SdrDspWorker {
     });
   }
 
+  void setCtcss(int mode, int toneIndex) {
+    _commandPort?.send(<String, Object>{
+      'type': 'ctcss',
+      'mode': mode,
+      'toneIndex': toneIndex,
+    });
+  }
+
+  void setFmIfNr(bool enabled, int preset) {
+    _commandPort?.send(<String, Object>{
+      'type': 'fmIfNr',
+      'enabled': enabled,
+      'preset': preset,
+    });
+  }
+
+  void setAmAgc(bool carrier, double attackMs, double decayMs) {
+    _commandPort?.send(<String, Object>{
+      'type': 'amAgc',
+      'carrier': carrier,
+      'attackMs': attackMs,
+      'decayMs': decayMs,
+    });
+  }
+
+  void setSsbAgc(double attackMs, double decayMs) {
+    _commandPort?.send(<String, Object>{
+      'type': 'ssbAgc',
+      'attackMs': attackMs,
+      'decayMs': decayMs,
+    });
+  }
+
+  void setCwOptions(int toneHz, double attackMs, double decayMs) {
+    _commandPort?.send(<String, Object>{
+      'type': 'cwOptions',
+      'toneHz': toneHz,
+      'attackMs': attackMs,
+      'decayMs': decayMs,
+    });
+  }
+
+  void setNfmOptions(bool lowPass) {
+    _commandPort?.send(<String, Object>{
+      'type': 'nfmOptions',
+      'lowPass': lowPass,
+    });
+  }
+
+  void setWfmOptions(bool stereo, bool lowPass, bool rdsEnabled) {
+    _commandPort?.send(<String, Object>{
+      'type': 'wfmOptions',
+      'stereo': stereo,
+      'lowPass': lowPass,
+      'rdsEnabled': rdsEnabled,
+    });
+  }
+
   void addIq(Uint8List data) {
     final port = _commandPort;
     if (port == null || data.isEmpty) {
@@ -185,6 +262,7 @@ class SdrDspWorker {
     await _audioController.close();
     await _backendController.close();
     await _rdsController.close();
+    await _ctcssController.close();
   }
 }
 
@@ -233,6 +311,48 @@ void _sdrDspWorkerMain(SendPort mainPort) {
       case 'deemphasis':
         processor.setDeemphasis(message['modeUs'] as int);
         break;
+      case 'ctcss':
+        processor.setCtcss(
+          message['mode'] as int,
+          message['toneIndex'] as int,
+        );
+        break;
+      case 'fmIfNr':
+        processor.setFmIfNr(
+          message['enabled'] as bool,
+          message['preset'] as int,
+        );
+        break;
+      case 'amAgc':
+        processor.setAmAgc(
+          message['carrier'] as bool,
+          (message['attackMs'] as num).toDouble(),
+          (message['decayMs'] as num).toDouble(),
+        );
+        break;
+      case 'ssbAgc':
+        processor.setSsbAgc(
+          (message['attackMs'] as num).toDouble(),
+          (message['decayMs'] as num).toDouble(),
+        );
+        break;
+      case 'cwOptions':
+        processor.setCwOptions(
+          message['toneHz'] as int,
+          (message['attackMs'] as num).toDouble(),
+          (message['decayMs'] as num).toDouble(),
+        );
+        break;
+      case 'nfmOptions':
+        processor.setNfmOptions(message['lowPass'] as bool);
+        break;
+      case 'wfmOptions':
+        processor.setWfmOptions(
+          message['stereo'] as bool,
+          message['lowPass'] as bool,
+          message['rdsEnabled'] as bool,
+        );
+        break;
       case 'iq':
         final data = message['data'];
         if (data is TransferableTypedData) {
@@ -274,6 +394,8 @@ class _DspProcessor {
   DateTime _lastRdsPoll = DateTime.fromMillisecondsSinceEpoch(0);
   String _lastRdsPs = '';
   String _lastRdsText = '';
+  DateTime _lastCtcssPoll = DateTime.fromMillisecondsSinceEpoch(0);
+  int _lastCtcssToneIndex = -999;
 
   double _sumI = 0;
   double _sumQ = 0;
@@ -349,11 +471,56 @@ class _DspProcessor {
     _native?.setDeemphasis(modeUs);
   }
 
+  void setCtcss(int mode, int toneIndex) {
+    _native?.setCtcss(mode, toneIndex);
+    _lastCtcssToneIndex = -999;
+  }
+
+  void setFmIfNr(bool enabled, int preset) {
+    _native?.setFmIfNr(enabled, preset);
+  }
+
+  void setAmAgc(bool carrier, double attackMs, double decayMs) {
+    _native?.setAmAgc(
+      carrier: carrier,
+      attackMs: attackMs,
+      decayMs: decayMs,
+    );
+  }
+
+  void setSsbAgc(double attackMs, double decayMs) {
+    _native?.setSsbAgc(
+      attackMs: attackMs,
+      decayMs: decayMs,
+    );
+  }
+
+  void setCwOptions(int toneHz, double attackMs, double decayMs) {
+    _native?.setCwOptions(
+      toneHz: toneHz,
+      attackMs: attackMs,
+      decayMs: decayMs,
+    );
+  }
+
+  void setNfmOptions(bool lowPass) {
+    _native?.setNfmOptions(lowPass: lowPass);
+  }
+
+  void setWfmOptions(bool stereo, bool lowPass, bool rdsEnabled) {
+    _native?.setWfmOptions(
+      stereo: stereo,
+      lowPass: lowPass,
+      rdsEnabled: rdsEnabled,
+    );
+  }
+
   void reset() {
     _fftSkipSamples = 0;
     _native?.reset();
     _lastRdsPs = '';
     _lastRdsText = '';
+    _lastCtcssToneIndex = -999;
     resetDemodState();
   }
 
@@ -405,22 +572,36 @@ class _DspProcessor {
         });
       }
 
-      if (mode == 'WFM') {
-        final now = DateTime.now();
-        if (now.difference(_lastRdsPoll).inMilliseconds >= 500) {
-          _lastRdsPoll = now;
-          final rds = native.getRds();
-          if (rds != null &&
-              (rds.programService != _lastRdsPs ||
-                  rds.radioText != _lastRdsText)) {
-            _lastRdsPs = rds.programService;
-            _lastRdsText = rds.radioText;
-            mainPort.send(<String, Object>{
-              'type': 'rds',
-              'programService': _lastRdsPs,
-              'radioText': _lastRdsText,
-            });
-          }
+      final now = DateTime.now();
+      if (mode == 'WFM' &&
+          now.difference(_lastRdsPoll).inMilliseconds >= 500) {
+        _lastRdsPoll = now;
+        final rds = native.getRds();
+        if (rds != null &&
+            (rds.programService != _lastRdsPs ||
+                rds.radioText != _lastRdsText)) {
+          _lastRdsPs = rds.programService;
+          _lastRdsText = rds.radioText;
+          mainPort.send(<String, Object>{
+            'type': 'rds',
+            'programService': _lastRdsPs,
+            'radioText': _lastRdsText,
+          });
+        }
+      }
+
+      if (mode == 'NFM' &&
+          now.difference(_lastCtcssPoll).inMilliseconds >= 250) {
+        _lastCtcssPoll = now;
+        final tone = native.getCtcss();
+        final toneIndex = tone?.toneIndex ?? -1;
+        if (toneIndex != _lastCtcssToneIndex) {
+          _lastCtcssToneIndex = toneIndex;
+          mainPort.send(<String, Object>{
+            'type': 'ctcss',
+            'toneIndex': toneIndex,
+            'toneHz': tone?.toneHz ?? 0.0,
+          });
         }
       }
       return;
