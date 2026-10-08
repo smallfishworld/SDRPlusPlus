@@ -6,6 +6,7 @@ add_library(sdrpp_mobile SHARED
     sdrpp_mobile_dsp.cpp
     sdrpp_mobile_source.cpp
     remote_sources.cpp
+    rtl_sdr_direct.cpp
     ../../decoder_modules/radio/src/rds.cpp
     ../../source_modules/rtl_tcp_source/src/rtl_tcp_client.cpp
     ../../core/src/utils/net.cpp
@@ -15,6 +16,9 @@ target_compile_features(sdrpp_mobile PRIVATE cxx_std_17)
 
 find_package(Threads REQUIRED)
 target_link_libraries(sdrpp_mobile PRIVATE Threads::Threads)
+if(UNIX AND NOT APPLE)
+    target_link_libraries(sdrpp_mobile PRIVATE dl)
+endif()
 
 # The compatibility include must come before SDR++ core/src so <volk/volk.h>
 # resolves to the portable bridge shim. The actual DSP implementation is
