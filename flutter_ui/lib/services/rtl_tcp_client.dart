@@ -66,6 +66,7 @@ class RtlTcpClient {
   String _filePath = '';
   String _soapyDriver = '';
   String _soapyHardware = '';
+  bool _soapyUsbOpen = false;
 
   RtlTcpConnectionState get state => _state;
   String get lastError => _lastError;
@@ -390,8 +391,24 @@ class RtlTcpClient {
     int channel = 0,
     String mode = 'AM',
     double bandwidthHz = 10000,
+    bool preserveUsbHandle = false,
   }) async {
-    await disconnect();
+    if (!preserveUsbHandle) {
+      await disconnect();
+    } else {
+      if (_nativeSourceActive) {
+        _dsp.disconnectSource();
+        _nativeSourceActive = false;
+      }
+      final subscription = _subscription;
+      _subscription = null;
+      await subscription?.cancel();
+      _socket?.destroy();
+      _socket = null;
+      _iqBuffer = BytesBuilder(copy: false);
+      _dsp.reset();
+      _setState(RtlTcpConnectionState.disconnected);
+    }
     await _dsp.start();
 
     _setState(RtlTcpConnectionState.connecting);
@@ -436,6 +453,52 @@ class RtlTcpClient {
     _dsp.setMode(_mode);
     _dsp.setBandwidth(_bandwidthHz);
     _setState(RtlTcpConnectionState.connected);
+  }
+
+  Future<void> connectSoapyUsb({
+    required String deviceName,
+    required String driver,
+    required int sampleRateHz,
+    required int frequencyHz,
+    required double rfBandwidthHz,
+    required double gainDb,
+    required bool agc,
+    int channel = 0,
+    String mode = 'AM',
+    double bandwidthHz = 10000,
+  }) async {
+    await disconnect();
+
+    final opened = await AndroidUsbService.openSdrUsb(deviceName);
+    if (opened == null) {
+      _lastError = 'USB permission denied or SDR device could not be opened';
+      _setState(RtlTcpConnectionState.error);
+      throw StateError(_lastError);
+    }
+
+    final actualDriver =
+        opened.driver == 'unknown' ? driver : opened.driver;
+    final args = 'driver=$actualDriver,fd=${opened.fd}';
+
+    try {
+      _soapyUsbOpen = true;
+      await connectSoapy(
+        deviceArgs: args,
+        sampleRateHz: sampleRateHz,
+        frequencyHz: frequencyHz,
+        rfBandwidthHz: rfBandwidthHz,
+        gainDb: gainDb,
+        agc: agc,
+        channel: channel,
+        mode: mode,
+        bandwidthHz: bandwidthHz,
+        preserveUsbHandle: true,
+      );
+    } catch (_) {
+      _soapyUsbOpen = false;
+      await AndroidUsbService.closeSdrUsb();
+      rethrow;
+    }
   }
 
   Future<void> connectRtlSdrUsb({
@@ -606,6 +669,10 @@ class RtlTcpClient {
     }
     if (_sourceKind == ReceiverSourceKind.rtlSdrUsb) {
       await AndroidUsbService.closeRtlSdr();
+    }
+    if (_soapyUsbOpen) {
+      _soapyUsbOpen = false;
+      await AndroidUsbService.closeSdrUsb();
     }
     _setState(RtlTcpConnectionState.disconnected);
   }
