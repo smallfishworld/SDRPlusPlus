@@ -1194,6 +1194,18 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                           'Network SDR source shared across Android, iOS, Windows and macOS.',
                           style: TextStyle(color: Color(0xFF7F91A5)),
                         ),
+                        const SizedBox(height: 6),
+                        Text(
+                          connected
+                              ? (_client.usingNativeSource
+                                  ? 'Backend: official SDR++ native rtl_tcp client'
+                                  : 'Backend: Dart compatibility transport')
+                              : 'Backend: native source preferred, Dart fallback available',
+                          style: const TextStyle(
+                            color: Color(0xFF67E8F9),
+                            fontSize: 12,
+                          ),
+                        ),
                         const SizedBox(height: 18),
                         TextField(
                           controller: _hostController,
