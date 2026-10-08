@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../models/sdr_module_catalog.dart';
 import '../services/audio_output.dart';
 import '../services/pcm_recorder.dart';
 import '../services/rtl_tcp_client.dart';
@@ -29,6 +30,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   StreamSubscription<String>? _backendSubscription;
   StreamSubscription<({String programService, String radioText})>?
       _rdsSubscription;
+  StreamSubscription<({int toneIndex, double toneHz})>?
+      _ctcssSubscription;
   StreamSubscription<RtlTcpConnectionState>? _stateSubscription;
   Timer? _scannerTimer;
   Timer? _retuneAudioTimer;
@@ -54,6 +57,26 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   double _noiseBlankerLevel = 10;
   bool _highPassEnabled = false;
   int _deemphasisUs = 50;
+
+  int _ctcssMode = 0; // 0 off, 1 decode-only, 2 mute
+  int _ctcssToneIndex = -2; // -2 = any valid tone
+  double _detectedCtcssHz = 0;
+  bool _fmIfNrEnabled = false;
+  int _fmIfNrPreset = 1; // Voice
+
+  bool _amCarrierAgc = false;
+  double _amAgcAttackMs = 50;
+  double _amAgcDecayMs = 5;
+  double _ssbAgcAttackMs = 50;
+  double _ssbAgcDecayMs = 5;
+  int _cwToneHz = 800;
+  double _cwAgcAttackMs = 100;
+  double _cwAgcDecayMs = 5;
+  bool _nfmLowPass = true;
+  bool _wfmStereo = true;
+  bool _wfmLowPass = true;
+  bool _wfmRdsEnabled = true;
+
   double _volume = 0.72;
   int _tuningStepHz = 25000;
   double _dragAccumulatorPx = 0;
@@ -91,6 +114,16 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     12500,
     25000,
     100000,
+  ];
+
+  static const List<double> _ctcssTones = <double>[
+    67.0, 69.3, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4, 88.5,
+    91.5, 94.8, 97.4, 100.0, 103.5, 107.2, 110.9, 114.8,
+    118.8, 123.0, 127.3, 131.8, 136.5, 141.3, 146.2, 150.0,
+    151.4, 156.7, 159.8, 162.2, 165.5, 167.9, 171.3, 173.8,
+    177.3, 179.9, 183.5, 186.2, 189.9, 192.8, 196.6, 199.5,
+    203.5, 206.5, 210.7, 218.1, 225.7, 229.1, 233.6, 241.8,
+    250.3, 254.1,
   ];
 
   static const List<_Preset> _presets = <_Preset>[
