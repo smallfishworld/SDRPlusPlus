@@ -21,9 +21,13 @@ class MainActivity : FlutterActivity() {
 
     private lateinit var usbManager: UsbManager
     private var activeConnection: UsbDeviceConnection? = null
-    private var pendingDevice: UsbDevice? = null
     private var pendingResult: MethodChannel.Result? = null
     private var receiverRegistered = false
+
+    private data class UsbSdrProfile(
+        val driver: String,
+        val fallbackName: String,
+    )
 
     private val rtlVidPid = setOf(
         0x0bda to 0x2832,
@@ -70,6 +74,25 @@ class MainActivity : FlutterActivity() {
         0x1f4d to 0xd803,
     )
 
+    private fun profileFor(device: UsbDevice): UsbSdrProfile? {
+        val id = device.vendorId to device.productId
+        if (rtlVidPid.contains(id)) {
+            return UsbSdrProfile("rtlsdr", "RTL-SDR")
+        }
+
+        return when (id) {
+            0x1d50 to 0x6089 ->
+                UsbSdrProfile("hackrf", "HackRF One")
+            0x1d50 to 0x604b ->
+                UsbSdrProfile("hackrf", "HackRF Jawbreaker")
+            0x1d50 to 0xcc15 ->
+                UsbSdrProfile("hackrf", "rad1o")
+            0x1d50 to 0x60a1 ->
+                UsbSdrProfile("airspy", "Airspy")
+            else -> null
+        }
+    }
+
     private val permissionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != usbPermissionAction) {
@@ -92,7 +115,6 @@ class MainActivity : FlutterActivity() {
             )
             val result = pendingResult
             pendingResult = null
-            pendingDevice = null
 
             if (!granted || device == null) {
                 result?.error(
@@ -116,9 +138,15 @@ class MainActivity : FlutterActivity() {
             channelName,
         ).setMethodCallHandler { call, result ->
             when (call.method) {
-                "listRtlSdrDevices" -> listDevices(result)
-                "openRtlSdr" -> openDevice(call, result)
+                "listRtlSdrDevices" -> listDevices(result, rtlOnly = true)
+                "openRtlSdr" -> openDevice(call, result, rtlOnly = true)
                 "closeRtlSdr" -> {
+                    closeActiveConnection()
+                    result.success(null)
+                }
+                "listSdrUsbDevices" -> listDevices(result, rtlOnly = false)
+                "openSdrUsb" -> openDevice(call, result, rtlOnly = false)
+                "closeSdrUsb" -> {
                     closeActiveConnection()
                     result.success(null)
                 }
@@ -148,16 +176,30 @@ class MainActivity : FlutterActivity() {
     private fun isRtlSdr(device: UsbDevice): Boolean =
         rtlVidPid.contains(device.vendorId to device.productId)
 
-    private fun deviceMap(device: UsbDevice): Map<String, Any> = mapOf(
-        "deviceName" to device.deviceName,
-        "vendorId" to device.vendorId,
-        "productId" to device.productId,
-        "productName" to (device.productName ?: "RTL-SDR"),
-    )
+    private fun deviceMap(device: UsbDevice): Map<String, Any> {
+        val profile = profileFor(device)
+            ?: UsbSdrProfile("unknown", "USB SDR")
+        return mapOf(
+            "deviceName" to device.deviceName,
+            "vendorId" to device.vendorId,
+            "productId" to device.productId,
+            "productName" to (device.productName ?: profile.fallbackName),
+            "driver" to profile.driver,
+        )
+    }
 
-    private fun listDevices(result: MethodChannel.Result) {
+    private fun listDevices(
+        result: MethodChannel.Result,
+        rtlOnly: Boolean,
+    ) {
         val devices = usbManager.deviceList.values
-            .filter(::isRtlSdr)
+            .filter { device ->
+                if (rtlOnly) {
+                    isRtlSdr(device)
+                } else {
+                    profileFor(device) != null
+                }
+            }
             .map(::deviceMap)
         result.success(devices)
     }
@@ -165,13 +207,17 @@ class MainActivity : FlutterActivity() {
     private fun openDevice(
         call: MethodCall,
         result: MethodChannel.Result,
+        rtlOnly: Boolean,
     ) {
         val deviceName = call.argument<String>("deviceName")
         val device = usbManager.deviceList[deviceName]
-        if (device == null || !isRtlSdr(device)) {
+        val supported = device != null &&
+            if (rtlOnly) isRtlSdr(device) else profileFor(device) != null
+
+        if (device == null || !supported) {
             result.error(
-                "RTL_SDR_NOT_FOUND",
-                "Selected RTL-SDR USB device is no longer available",
+                "SDR_USB_NOT_FOUND",
+                "Selected USB SDR device is no longer available",
                 null,
             )
             return
@@ -191,7 +237,6 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        pendingDevice = device
         pendingResult = result
 
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -217,8 +262,8 @@ class MainActivity : FlutterActivity() {
         val connection = usbManager.openDevice(device)
         if (connection == null) {
             result?.error(
-                "RTL_SDR_OPEN_FAILED",
-                "Android UsbManager could not open the RTL-SDR",
+                "SDR_USB_OPEN_FAILED",
+                "Android UsbManager could not open the SDR device",
                 null,
             )
             return
@@ -244,7 +289,6 @@ class MainActivity : FlutterActivity() {
             null,
         )
         pendingResult = null
-        pendingDevice = null
 
         closeActiveConnection()
         if (receiverRegistered) {
