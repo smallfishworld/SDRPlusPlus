@@ -175,53 +175,8 @@ jobs:
           # any SDR supported by SoapySDR on a desktop/server, including
           # hardware whose vendor SDK cannot be embedded on Android.
           git clone --depth 1 https://github.com/pothosware/SoapyRemote.git soapy-remote
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path("soapy-remote/CMakeLists.txt")
-          text = p.read_text()
-          text = text.replace("add_subdirectory(server)", "# mobile client only")
-          text = text.replace(
-              'if(CMAKE_SYSTEM_NAME STREQUAL "Linux")\n    add_subdirectory(system)\nendif()',
-              '# mobile client: no system service')
-          p.write_text(text)
-
-          # Android bionic intentionally has no gethostid(). SoapyRemote only
-          # uses it as 32 bits of entropy for a generated client UUID. Supply a
-          # stable process-local replacement based on hostname so the upstream
-          # UUID layout and protocol remain unchanged.
-          info = Path("soapy-remote/common/SoapyInfoUtils.in.cpp")
-          text = info.read_text()
-          marker = '#endif //_MSC_VER\n'
-          android = r'''
-#ifndef _MSC_VER
-#ifdef __ANDROID__
-static unsigned int gethostid(void)
-{
-    char host[128] = {0};
-    if (gethostname(host, sizeof(host) - 1) != 0)
-    {
-        return 0x534F4150u; // "SOAP"
-    }
-
-    // FNV-1a 32-bit, sufficient for UUID node entropy.
-    unsigned int hash = 2166136261u;
-    for (const unsigned char *p = (const unsigned char *)host; *p; ++p)
-    {
-        hash ^= *p;
-        hash *= 16777619u;
-    }
-    return hash;
-}
-#endif
-#endif
-'''
-          if android.strip() not in text:
-              text = text.replace(marker, marker + android)
-          info.write_text(text)
-          PY
-          grep -q "static unsigned int gethostid" \
-            soapy-remote/common/SoapyInfoUtils.in.cpp
+          python3 "$GITHUB_WORKSPACE/tooling/patch_soapy_remote_android.py" \
+            "$DEPS/soapy-remote"
 
           cmake \
             -S soapy-remote \
