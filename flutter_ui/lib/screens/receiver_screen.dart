@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../models/sdr_module_catalog.dart';
+import '../services/android_usb_service.dart';
 import '../services/audio_output.dart';
 import '../services/pcm_recorder.dart';
 import '../services/rtl_tcp_client.dart';
@@ -56,6 +57,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   bool _iqFileFloat32 = false;
   int _networkProtocol = 0; // 0 TCP client, 1 UDP
   int _networkSampleType = 1; // 0 I8, 1 I16, 2 I32, 3 F32
+  List<AndroidRtlSdrDevice> _rtlUsbDevices =
+      const <AndroidRtlSdrDevice>[];
+  String? _rtlUsbDeviceName;
+  bool _rtlUsbRefreshing = false;
 
   int _tab = 0;
   String _presetCategory = 'All';
@@ -1205,6 +1210,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                   'Backend: official SDR++ Server protocol runtime',
                 ReceiverSourceKind.spyServer =>
                   'Backend: official SpyServer protocol runtime',
+                ReceiverSourceKind.rtlSdrUsb =>
+                  'Backend: official librtlsdr USB runtime',
               }
             : 'Backend: Dart compatibility transport')
         : 'Backend: native SDR++ source runtime';
@@ -1256,12 +1263,19 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                   value: ReceiverSourceKind.spyServer,
                   child: Text('SpyServer'),
                 ),
+                DropdownMenuItem(
+                  value: ReceiverSourceKind.rtlSdrUsb,
+                  child: Text('RTL-SDR USB (Android)'),
+                ),
               ],
               onChanged: connected
                   ? null
                   : (value) {
                       if (value != null) {
                         setState(() => _selectedSourceKind = value);
+                        if (value == ReceiverSourceKind.rtlSdrUsb) {
+                          unawaited(_refreshRtlUsbDevices());
+                        }
                       }
                     },
             ),
@@ -1283,6 +1297,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
               ..._sdrppServerSourceControls(connected),
             if (_selectedSourceKind == ReceiverSourceKind.spyServer)
               ..._spyServerSourceControls(connected),
+            if (_selectedSourceKind == ReceiverSourceKind.rtlSdrUsb)
+              ..._rtlSdrUsbSourceControls(connected),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: connected ? _disconnect : _connectSelectedSource,
@@ -1297,6 +1313,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                           Icons.dns_rounded,
                         ReceiverSourceKind.spyServer =>
                           Icons.wifi_tethering_rounded,
+                        ReceiverSourceKind.rtlSdrUsb =>
+                          Icons.usb_rounded,
                       },
               ),
               label: Text(
@@ -1312,6 +1330,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                           'Connect SDR++ Server',
                         ReceiverSourceKind.spyServer =>
                           'Connect SpyServer',
+                        ReceiverSourceKind.rtlSdrUsb =>
+                          'Open RTL-SDR USB',
                       },
               ),
             ),
@@ -1737,6 +1757,221 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     ];
   }
 
+  List<Widget> _rtlSdrUsbSourceControls(bool connected) {
+    final supported = AndroidUsbService.supported;
+    return <Widget>[
+      if (!supported)
+        const Padding(
+          padding: EdgeInsets.only(bottom: 12),
+          child: Text(
+            'Direct USB is currently available on Android. Windows/macOS use the desktop SDR++ hardware source path in a later packaging step.',
+            style: TextStyle(color: Color(0xFFFFB86B), height: 1.4),
+          ),
+        ),
+      Row(
+        children: <Widget>[
+          Expanded(
+            child: DropdownButtonFormField<String>(
+              key: ValueKey<String?>(
+                'rtl-usb-$_rtlUsbDeviceName-${_rtlUsbDevices.length}',
+              ),
+              initialValue: _rtlUsbDevices.any(
+                (device) => device.deviceName == _rtlUsbDeviceName,
+              )
+                  ? _rtlUsbDeviceName
+                  : null,
+              decoration: const InputDecoration(
+                labelText: 'RTL-SDR USB device',
+                prefixIcon: Icon(Icons.usb_rounded),
+                border: OutlineInputBorder(),
+              ),
+              items: <DropdownMenuItem<String>>[
+                for (final device in _rtlUsbDevices)
+                  DropdownMenuItem<String>(
+                    value: device.deviceName,
+                    child: Text(
+                      '${device.productName}  ${device.vidPid}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+              onChanged: connected || !supported
+                  ? null
+                  : (value) =>
+                      setState(() => _rtlUsbDeviceName = value),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton.filledTonal(
+            tooltip: 'Refresh USB devices',
+            onPressed: connected || !supported || _rtlUsbRefreshing
+                ? null
+                : _refreshRtlUsbDevices,
+            icon: _rtlUsbRefreshing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      DropdownButtonFormField<int>(
+        key: ValueKey<String>('usb-sr-$_sampleRateHz'),
+        initialValue: <int>[1024000, 2048000, 2400000]
+                .contains(_sampleRateHz)
+            ? _sampleRateHz
+            : 1024000,
+        decoration: const InputDecoration(
+          labelText: 'Sample rate',
+          prefixIcon: Icon(Icons.speed_rounded),
+          border: OutlineInputBorder(),
+        ),
+        items: const <DropdownMenuItem<int>>[
+          DropdownMenuItem(value: 1024000, child: Text('1.024 MSPS')),
+          DropdownMenuItem(value: 2048000, child: Text('2.048 MSPS')),
+          DropdownMenuItem(value: 2400000, child: Text('2.400 MSPS')),
+        ],
+        onChanged: connected
+            ? null
+            : (value) {
+                if (value != null) {
+                  setState(() => _sampleRateHz = value);
+                }
+              },
+      ),
+      const SizedBox(height: 8),
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Tuner AGC'),
+        value: _tunerAgc,
+        onChanged: (value) {
+          setState(() => _tunerAgc = value);
+          if (connected) {
+            _client.setTunerAgc(value);
+          }
+        },
+      ),
+      if (!_tunerAgc) ...<Widget>[
+        Text('Manual gain  ${_manualGainDb.toStringAsFixed(1)} dB'),
+        Slider(
+          value: _manualGainDb,
+          min: -9.9,
+          max: 49.6,
+          divisions: 595,
+          label: '${_manualGainDb.toStringAsFixed(1)} dB',
+          onChanged: (value) {
+            setState(() => _manualGainDb = value);
+            if (connected) {
+              _client.setGainDb(value);
+            }
+          },
+        ),
+      ],
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('RTL AGC'),
+        value: _rtlAgc,
+        onChanged: (value) {
+          setState(() => _rtlAgc = value);
+          if (connected) {
+            _client.setRtlAgc(value);
+          }
+        },
+      ),
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Bias-T'),
+        subtitle: const Text('Only enable for powered antenna/LNA hardware'),
+        value: _biasTee,
+        onChanged: (value) {
+          setState(() => _biasTee = value);
+          if (connected) {
+            _client.setBiasTee(value);
+          }
+        },
+      ),
+      DropdownButtonFormField<int>(
+        key: ValueKey<String>('usb-direct-$_directSampling'),
+        initialValue: _directSampling,
+        decoration: const InputDecoration(
+          labelText: 'Direct sampling',
+          border: OutlineInputBorder(),
+        ),
+        items: const <DropdownMenuItem<int>>[
+          DropdownMenuItem(value: 0, child: Text('Disabled')),
+          DropdownMenuItem(value: 1, child: Text('I branch')),
+          DropdownMenuItem(value: 2, child: Text('Q branch')),
+        ],
+        onChanged: (value) {
+          if (value != null) {
+            setState(() => _directSampling = value);
+            if (connected) {
+              _client.setDirectSampling(value);
+            }
+          }
+        },
+      ),
+      const SizedBox(height: 12),
+      Text('Frequency correction  $_ppm ppm'),
+      Slider(
+        value: _ppm.toDouble(),
+        min: -100,
+        max: 100,
+        divisions: 200,
+        label: '$_ppm ppm',
+        onChanged: (value) {
+          final ppm = value.round();
+          setState(() => _ppm = ppm);
+          if (connected) {
+            _client.setPpm(ppm);
+          }
+        },
+      ),
+      const Text(
+        'Android uses UsbManager permission + the official SDR++ librtlsdr system-device path. No RTL-TCP server is required.',
+        style: TextStyle(
+          color: Color(0xFF7F91A5),
+          fontSize: 12,
+          height: 1.4,
+        ),
+      ),
+    ];
+  }
+
+  Future<void> _refreshRtlUsbDevices() async {
+    if (!AndroidUsbService.supported) {
+      return;
+    }
+    setState(() => _rtlUsbRefreshing = true);
+    try {
+      final devices = await AndroidUsbService.listRtlSdrDevices();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _rtlUsbDevices = devices;
+        if (devices.isEmpty) {
+          _rtlUsbDeviceName = null;
+        } else if (!devices.any(
+          (device) => device.deviceName == _rtlUsbDeviceName,
+        )) {
+          _rtlUsbDeviceName = devices.first.deviceName;
+        }
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() => _connectionError = error.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _rtlUsbRefreshing = false);
+      }
+    }
+  }
+
   Future<void> _pickIqFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -1764,9 +1999,78 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       case ReceiverSourceKind.spyServer:
         await _connectSpyServerSource();
         break;
+      case ReceiverSourceKind.rtlSdrUsb:
+        await _connectRtlSdrUsbSource();
+        break;
       case ReceiverSourceKind.rtlTcp:
         await _connect();
         break;
+    }
+  }
+
+  Future<void> _connectRtlSdrUsbSource() async {
+    if (_rtlUsbDeviceName == null) {
+      await _refreshRtlUsbDevices();
+      if (_rtlUsbDeviceName == null) {
+        if (mounted) {
+          setState(
+            () => _connectionError =
+                'No supported RTL-SDR USB device was found',
+          );
+        }
+        return;
+      }
+    }
+
+    setState(() {
+      _connectionError = '';
+      _waterfall.clear();
+    });
+
+    try {
+      await _audio.start();
+      _audio.setVolume(_volume);
+      await _client.connectRtlSdrUsb(
+        deviceName: _rtlUsbDeviceName!,
+        sampleRateHz: _sampleRateHz,
+        frequencyHz: _frequencyHz,
+        mode: _mode,
+        bandwidthHz: _bandwidthKhz * 1000,
+      );
+
+      _client.setTunerAgc(_tunerAgc);
+      if (!_tunerAgc) {
+        _client.setGainDb(_manualGainDb);
+      }
+      _client.setRtlAgc(_rtlAgc);
+      _client.setBiasTee(_biasTee);
+      _client.setDirectSampling(_directSampling);
+      _client.setPpm(_ppm);
+      _client.setOffsetTuning(_offsetTuning);
+      _client.setSquelch(_squelchEnabled, _squelchDb);
+      _client.setNoiseBlanker(
+        _noiseBlankerEnabled,
+        _noiseBlankerLevel,
+      );
+      _client.setHighPass(_highPassEnabled);
+      _client.setDeemphasis(_deemphasisUs);
+      _applyRadioDetailOptions();
+
+      if (mounted) {
+        setState(() {
+          _sampleRateHz = _client.sampleRateHz;
+          _frequencyHz = _client.frequencyHz;
+          _scanFrequencyHz = _frequencyHz;
+          _tab = 0;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        final message = _client.lastError.isNotEmpty
+            ? _client.lastError
+            : error.toString();
+        setState(() => _connectionError = message);
+      }
     }
   }
 
