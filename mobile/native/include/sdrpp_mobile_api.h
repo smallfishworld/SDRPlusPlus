@@ -202,6 +202,28 @@ SDRPP_MOBILE_API int sdrpp_source_connect_spyserver(
     uint32_t sample_rate_hz,
     uint32_t frequency_hz);
 
+SDRPP_MOBILE_API int sdrpp_source_connect_rfspace(
+    sdrpp_source_t source,
+    const char* host,
+    int port,
+    uint32_t sample_rate_hz,
+    uint32_t frequency_hz,
+    int gain_db);
+
+SDRPP_MOBILE_API int sdrpp_source_connect_hermes(
+    sdrpp_source_t source,
+    const char* host,
+    int port,
+    uint32_t sample_rate_hz,
+    uint32_t frequency_hz,
+    int gain_db);
+
+SDRPP_MOBILE_API int sdrpp_source_connect_spectran_http(
+    sdrpp_source_t source,
+    const char* host,
+    int port,
+    uint32_t frequency_hz);
+
 SDRPP_MOBILE_API int sdrpp_source_connect_rtl_sdr_fd(
     sdrpp_source_t source,
     int system_fd,
