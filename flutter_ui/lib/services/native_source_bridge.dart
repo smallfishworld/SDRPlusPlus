@@ -87,6 +87,53 @@ typedef _SourceConnectSpyServerDart = int Function(
   int,
 );
 
+typedef _SourceConnectRfspaceNative = Int32 Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  Int32,
+  Uint32,
+  Uint32,
+  Int32,
+);
+typedef _SourceConnectRfspaceDart = int Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  int,
+  int,
+  int,
+  int,
+);
+
+typedef _SourceConnectHermesNative = Int32 Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  Int32,
+  Uint32,
+  Uint32,
+  Int32,
+);
+typedef _SourceConnectHermesDart = int Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  int,
+  int,
+  int,
+  int,
+);
+
+typedef _SourceConnectSpectranHttpNative = Int32 Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  Int32,
+  Uint32,
+);
+typedef _SourceConnectSpectranHttpDart = int Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  int,
+  int,
+);
+
 typedef _SourceConnectRtlSdrFdNative = Int32 Function(
   Pointer<Void>,
   Int32,
@@ -158,6 +205,9 @@ class NativeRtlTcpSourceBridge {
     this._connectSdrppServer,
     this._connectSpyServer,
     this._connectRtlSdrFd,
+    this._connectRfspace,
+    this._connectHermes,
+    this._connectSpectranHttp,
     this._getKind,
     this._getSampleRate,
     this._getCenterFrequency,
@@ -192,6 +242,9 @@ class NativeRtlTcpSourceBridge {
   final _SourceConnectSdrppServerDart _connectSdrppServer;
   final _SourceConnectSpyServerDart _connectSpyServer;
   final _SourceConnectRtlSdrFdDart _connectRtlSdrFd;
+  final _SourceConnectRfspaceDart _connectRfspace;
+  final _SourceConnectHermesDart _connectHermes;
+  final _SourceConnectSpectranHttpDart _connectSpectranHttp;
   final _SourceBoolDart _getKind;
   final _SourceGetU32Dart _getSampleRate;
   final _SourceGetU32Dart _getCenterFrequency;
@@ -249,6 +302,21 @@ class NativeRtlTcpSourceBridge {
           _SourceConnectRtlSdrFdNative,
           _SourceConnectRtlSdrFdDart>(
         'sdrpp_source_connect_rtl_sdr_fd',
+      );
+      final connectRfspace = library.lookupFunction<
+          _SourceConnectRfspaceNative,
+          _SourceConnectRfspaceDart>(
+        'sdrpp_source_connect_rfspace',
+      );
+      final connectHermes = library.lookupFunction<
+          _SourceConnectHermesNative,
+          _SourceConnectHermesDart>(
+        'sdrpp_source_connect_hermes',
+      );
+      final connectSpectranHttp = library.lookupFunction<
+          _SourceConnectSpectranHttpNative,
+          _SourceConnectSpectranHttpDart>(
+        'sdrpp_source_connect_spectran_http',
       );
       final getKind = library.lookupFunction<
           _SourceBoolNative,
@@ -319,6 +387,9 @@ class NativeRtlTcpSourceBridge {
         connectSdrppServer,
         connectSpyServer,
         connectRtlSdrFd,
+        connectRfspace,
+        connectHermes,
+        connectSpectranHttp,
         getKind,
         getSampleRate,
         getCenterFrequency,
@@ -496,6 +567,80 @@ class NativeRtlTcpSourceBridge {
           frequencyHz,
         ) ==
         0;
+  }
+
+  bool connectRfspace({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    required int frequencyHz,
+    required int gainDb,
+  }) {
+    if (_disposed) {
+      return false;
+    }
+    final nativeHost = host.toNativeUtf8();
+    try {
+      return _connectRfspace(
+            _source,
+            nativeHost,
+            port,
+            sampleRateHz,
+            frequencyHz,
+            gainDb,
+          ) ==
+          0;
+    } finally {
+      calloc.free(nativeHost);
+    }
+  }
+
+  bool connectHermes({
+    required String host,
+    required int port,
+    required int sampleRateHz,
+    required int frequencyHz,
+    required int gainDb,
+  }) {
+    if (_disposed) {
+      return false;
+    }
+    final nativeHost = host.toNativeUtf8();
+    try {
+      return _connectHermes(
+            _source,
+            nativeHost,
+            port,
+            sampleRateHz,
+            frequencyHz,
+            gainDb,
+          ) ==
+          0;
+    } finally {
+      calloc.free(nativeHost);
+    }
+  }
+
+  bool connectSpectranHttp({
+    required String host,
+    required int port,
+    required int frequencyHz,
+  }) {
+    if (_disposed) {
+      return false;
+    }
+    final nativeHost = host.toNativeUtf8();
+    try {
+      return _connectSpectranHttp(
+            _source,
+            nativeHost,
+            port,
+            frequencyHz,
+          ) ==
+          0;
+    } finally {
+      calloc.free(nativeHost);
+    }
   }
 
   int get kind => _disposed ? 0 : _getKind(_source);
