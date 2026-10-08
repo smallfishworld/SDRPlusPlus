@@ -136,5 +136,47 @@ if(BUILD_TESTING AND NOT ANDROID)
             NAME sdrpp_mobile_network_source_smoke
             COMMAND sdrpp_mobile_network_source_smoke
         )
+
+        add_executable(sdrpp_mobile_spyserver_source_smoke
+            tests/spyserver_source_smoke.cpp
+        )
+        target_compile_features(
+            sdrpp_mobile_spyserver_source_smoke
+            PRIVATE cxx_std_17
+        )
+        target_include_directories(
+            sdrpp_mobile_spyserver_source_smoke
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/include
+                ${CMAKE_CURRENT_SOURCE_DIR}/../../source_modules/spyserver_source/src
+        )
+        target_link_libraries(
+            sdrpp_mobile_spyserver_source_smoke
+            PRIVATE sdrpp_mobile Threads::Threads
+        )
+        add_test(
+            NAME sdrpp_mobile_spyserver_source_smoke
+            COMMAND sdrpp_mobile_spyserver_source_smoke
+        )
+
+        add_executable(sdrpp_mobile_sdrpp_server_source_smoke
+            tests/sdrpp_server_source_smoke.cpp
+        )
+        target_compile_features(
+            sdrpp_mobile_sdrpp_server_source_smoke
+            PRIVATE cxx_std_17
+        )
+        target_include_directories(
+            sdrpp_mobile_sdrpp_server_source_smoke
+            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        target_link_libraries(
+            sdrpp_mobile_sdrpp_server_source_smoke
+            PRIVATE sdrpp_mobile Threads::Threads
+        )
+        add_test(
+            NAME sdrpp_mobile_sdrpp_server_source_smoke
+            COMMAND sdrpp_mobile_sdrpp_server_source_smoke
+        )
     endif()
 endif()
