@@ -114,10 +114,45 @@ public:
         // Same unsigned RTL-TCP conversion used by SDR++'s official
         // rtl_tcp_source client.
         for (size_t i = 0; i < complexCount; ++i) {
-            rfInput[i].re = (static_cast<float>(iq[i * 2]) - 128.0f) / 128.0f;
-            rfInput[i].im = (static_cast<float>(iq[i * 2 + 1]) - 128.0f) / 128.0f;
+            rfInput[i].re =
+                (static_cast<float>(iq[i * 2]) - 128.0f) / 128.0f;
+            rfInput[i].im =
+                (static_cast<float>(iq[i * 2 + 1]) - 128.0f) / 128.0f;
         }
 
+        return processPreparedLocked(
+            complexCount,
+            outPcm,
+            outCapacity);
+    }
+
+    size_t processComplex(
+        const float* iqInterleaved,
+        size_t complexCount,
+        int16_t* outPcm,
+        size_t outCapacity) {
+        if (!iqInterleaved || !outPcm ||
+            complexCount == 0 || outCapacity == 0) {
+            return 0;
+        }
+
+        std::lock_guard<std::mutex> lock(mutex);
+        ensureInputCapacity(complexCount);
+        for (size_t i = 0; i < complexCount; ++i) {
+            rfInput[i].re = iqInterleaved[i * 2];
+            rfInput[i].im = iqInterleaved[i * 2 + 1];
+        }
+
+        return processPreparedLocked(
+            complexCount,
+            outPcm,
+            outCapacity);
+    }
+
+    size_t processPreparedLocked(
+        size_t complexCount,
+        int16_t* outPcm,
+        size_t outCapacity) {
         const size_t expectedIf = static_cast<size_t>(
             std::ceil((static_cast<double>(complexCount) * ifSampleRate) /
                       static_cast<double>(inputSampleRate))) + 4096;
