@@ -22,6 +22,9 @@
 #include <utils/net.h>
 #include "../../source_modules/rtl_tcp_source/src/rtl_tcp_client.h"
 #include "../../source_modules/file_source/src/wavreader.h"
+#include "../../source_modules/rfspace_source/src/rfspace_client.h"
+#include "../../source_modules/hermes_source/src/hermes.h"
+#include "../../source_modules/spectran_http_source/src/spectran_http_client.h"
 
 namespace {
 
@@ -38,6 +41,9 @@ enum class MobileSourceKind : int {
     SdrppServer = 4,
     SpyServer = 5,
     RtlSdrUsb = 6,
+    RFspace = 7,
+    Hermes = 8,
+    SpectranHttp = 9,
 };
 
 class MobileSourceRuntime {
