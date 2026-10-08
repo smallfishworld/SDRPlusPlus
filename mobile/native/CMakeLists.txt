@@ -7,6 +7,7 @@ add_library(sdrpp_mobile SHARED
     sdrpp_mobile_source.cpp
     remote_sources.cpp
     rtl_sdr_direct.cpp
+    soapy_dynamic.cpp
     ../../decoder_modules/radio/src/rds.cpp
     ../../source_modules/rtl_tcp_source/src/rtl_tcp_client.cpp
     ../../source_modules/rfspace_source/src/rfspace_client.cpp
