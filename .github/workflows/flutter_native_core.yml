@@ -171,18 +171,53 @@ jobs:
           cmake --build soapy-rtlsdr-build --parallel 2
           cmake --install soapy-rtlsdr-build
 
+          # SoapyRemote gives the Android client a universal network path to
+          # any SDR supported by SoapySDR on a desktop/server, including
+          # hardware whose vendor SDK cannot be embedded on Android.
+          git clone --depth 1 https://github.com/pothosware/SoapyRemote.git soapy-remote
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("soapy-remote/CMakeLists.txt")
+          text = p.read_text()
+          text = text.replace("add_subdirectory(server)", "# mobile client only")
+          text = text.replace(
+              'if(CMAKE_SYSTEM_NAME STREQUAL "Linux")\n    add_subdirectory(system)\nendif()',
+              '# mobile client: no system service')
+          p.write_text(text)
+          PY
+          cmake \
+            -S soapy-remote \
+            -B soapy-remote-build \
+            -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$SOAPY_PREFIX" \
+            -DSoapySDR_DIR="$SOAPY_PREFIX/share/cmake/SoapySDR" \
+            -DENABLE_AVAHI=OFF
+          cmake --build soapy-remote-build --parallel 2
+          cmake --install soapy-remote-build
+
           SOAPY_SO="$(find "$SOAPY_PREFIX" -name 'libSoapySDR.so' -type f | head -n 1)"
           SOAPY_RTL="$(find "$SOAPY_PREFIX" -name 'librtlsdrSupport.so' -type f | head -n 1)"
+          SOAPY_REMOTE="$(find "$SOAPY_PREFIX" -name 'libremoteSupport.so' -type f | head -n 1)"
           test -f "$SOAPY_SO"
           test -f "$SOAPY_RTL"
+          test -f "$SOAPY_REMOTE"
 
           JNI="$GITHUB_WORKSPACE/flutter_ui/android/app/src/main/jniLibs/arm64-v8a"
           mkdir -p "$JNI"
           cp "$SOAPY_SO" "$JNI/libSoapySDR.so"
           cp "$SOAPY_RTL" "$JNI/librtlsdrSupport.so"
+          cp "$SOAPY_REMOTE" "$JNI/libremoteSupport.so"
 
-          file "$JNI/libSoapySDR.so" "$JNI/librtlsdrSupport.so"
+          file \
+            "$JNI/libSoapySDR.so" \
+            "$JNI/librtlsdrSupport.so" \
+            "$JNI/libremoteSupport.so"
           readelf -d "$JNI/librtlsdrSupport.so" | grep NEEDED || true
+          readelf -d "$JNI/libremoteSupport.so" | grep NEEDED || true
 
       - name: Build official SDR++ DSP native bridge
         shell: bash
