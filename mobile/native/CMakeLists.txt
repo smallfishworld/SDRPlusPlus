@@ -89,6 +89,19 @@ if(BUILD_TESTING AND NOT ANDROID)
         COMMAND sdrpp_mobile_fm_ifnr_smoke
     )
 
+    add_executable(sdrpp_mobile_wfm_clean_smoke
+        tests/wfm_clean_smoke.cpp
+    )
+    target_compile_features(sdrpp_mobile_wfm_clean_smoke PRIVATE cxx_std_17)
+    target_include_directories(sdrpp_mobile_wfm_clean_smoke PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(sdrpp_mobile_wfm_clean_smoke PRIVATE sdrpp_mobile)
+    add_test(
+        NAME sdrpp_mobile_wfm_clean_smoke
+        COMMAND sdrpp_mobile_wfm_clean_smoke
+    )
+
     if(NOT WIN32)
         add_executable(sdrpp_mobile_rtl_tcp_source_smoke
             tests/rtl_tcp_source_smoke.cpp
