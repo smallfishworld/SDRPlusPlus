@@ -201,7 +201,12 @@ public:
             return 0;
         }
 
-        if (noiseBlankerEnabled && noiseBlanker) {
+        const bool noiseBlankerAllowed =
+            mode == SDRPP_MODE_USB ||
+            mode == SDRPP_MODE_LSB ||
+            mode == SDRPP_MODE_DSB ||
+            mode == SDRPP_MODE_RAW;
+        if (noiseBlankerEnabled && noiseBlanker && noiseBlankerAllowed) {
             noiseBlanker->process(ifCount, ifBuffer.data(), ifBuffer.data());
         }
 
