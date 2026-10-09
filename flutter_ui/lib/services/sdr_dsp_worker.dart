@@ -244,6 +244,13 @@ class SdrDspWorker {
     });
   }
 
+  void setNfmVoiceFilter(bool enabled) {
+    _commandPort?.send(<String, Object>{
+      'type': 'nfmVoiceFilter',
+      'enabled': enabled,
+    });
+  }
+
   void setWfmOptions(bool stereo, bool lowPass, bool rdsEnabled) {
     _commandPort?.send(<String, Object>{
       'type': 'wfmOptions',
@@ -1034,6 +1041,9 @@ void _sdrDspWorkerMain(SendPort mainPort) {
       case 'nfmOptions':
         processor.setNfmOptions(message['lowPass'] as bool);
         break;
+      case 'nfmVoiceFilter':
+        processor.setNfmVoiceFilter(message['enabled'] as bool);
+        break;
       case 'wfmOptions':
         processor.setWfmOptions(
           message['stereo'] as bool,
@@ -1443,6 +1453,10 @@ class _DspProcessor {
 
   void setNfmOptions(bool lowPass) {
     _native?.setNfmOptions(lowPass: lowPass);
+  }
+
+  void setNfmVoiceFilter(bool enabled) {
+    _native?.setNfmVoiceFilter(enabled);
   }
 
   void setWfmOptions(bool stereo, bool lowPass, bool rdsEnabled) {
