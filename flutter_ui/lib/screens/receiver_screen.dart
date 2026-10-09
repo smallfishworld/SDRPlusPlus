@@ -677,7 +677,9 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
               Positioned(
                 right: 12,
                 top: 10,
-                child: _tinyBadge(_mode),
+                child: _tinyBadge(
+                  '$_mode · SNR ${_currentPeakAboveNoise().toStringAsFixed(1)} dB',
+                ),
               ),
               Positioned(
                 left: 12,
@@ -3860,9 +3862,27 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     setState(() {
       _mode = preset.mode;
       _bandwidthKhz = preset.bandwidthHz / 1000;
+
+      if (preset.mode == 'WFM') {
+        // Broadcast presets start in the low-noise mobile profile.
+        _fmProfile = 'Clean';
+        _fmIfNrEnabled = true;
+        _fmIfNrPreset = 3;
+        _wfmStereo = false;
+        _wfmLowPass = true;
+        _deemphasisUs = 50;
+        _highPassEnabled = false;
+        _noiseBlankerEnabled = false;
+      }
     });
     _client.setMode(_mode);
     _client.setBandwidth(preset.bandwidthHz);
+    _client.setDeemphasis(_deemphasisUs);
+    _client.setHighPass(_highPassEnabled);
+    _client.setNoiseBlanker(
+      _noiseBlankerEnabled,
+      _noiseBlankerLevel,
+    );
     _applyRadioDetailOptions();
     _tuneFrequency(preset.frequencyHz);
   }
