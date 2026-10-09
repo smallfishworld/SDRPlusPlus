@@ -337,6 +337,21 @@ public:
             audioData = audioBuffer2.data();
         }
 
+        if (mode == SDRPP_MODE_NFM &&
+            nfmVoiceFilterEnabled &&
+            nfmVoiceLowPass) {
+            ensureAudioCapacity(static_cast<size_t>(audioCount));
+            const float* voiceOut =
+                (audioData == audioBuffer2.data())
+                    ? audioBuffer.data()
+                    : audioBuffer2.data();
+            nfmVoiceLowPass->process(
+                audioCount,
+                audioData,
+                const_cast<float*>(voiceOut));
+            audioData = voiceOut;
+        }
+
         ensureCtcssCapacity(static_cast<size_t>(audioCount));
         for (int i = 0; i < audioCount; ++i) {
             const float sample = audioData[i];
@@ -515,6 +530,14 @@ public:
         }
     }
 
+    void setNfmVoiceFilter(bool enabled) {
+        std::lock_guard<std::mutex> lock(mutex);
+        nfmVoiceFilterEnabled = enabled;
+        if (nfmVoiceLowPass) {
+            nfmVoiceLowPass->reset();
+        }
+    }
+
     void setWfmOptions(bool stereo, bool lowPass, bool rdsEnabled) {
         std::lock_guard<std::mutex> lock(mutex);
         wfmStereo = stereo;
@@ -617,6 +640,7 @@ private:
         stereoAudioResampler.reset();
         monoHighPass.reset();
         stereoHighPass.reset();
+        nfmVoiceLowPass.reset();
         noiseBlanker.reset();
         powerSquelch.reset();
         fmIfNr.reset();
@@ -782,6 +806,15 @@ private:
             std::make_unique<dsp::filter::FIR<dsp::stereo_t, float>>();
         stereoHighPass->init(nullptr, hpTaps);
         stereoHighPass->out.free();
+
+        auto nfmVoiceLpTaps = dsp::taps::lowPass(
+            3200.0,
+            800.0,
+            kOutputSampleRate);
+        nfmVoiceLowPass =
+            std::make_unique<dsp::filter::FIR<float, float>>();
+        nfmVoiceLowPass->init(nullptr, nfmVoiceLpTaps);
+        nfmVoiceLowPass->out.free();
 
         ctcss =
             std::make_unique<dsp::noise_reduction::CTCSSSquelch>();
@@ -982,6 +1015,7 @@ private:
     float cwAgcAttackMs = 100.0f;
     float cwAgcDecayMs = 5.0f;
     bool nfmLowPass = true;
+    bool nfmVoiceFilterEnabled = true;
     bool wfmStereo = false;
     bool wfmLowPass = true;
     bool wfmRdsEnabled = true;
@@ -1011,6 +1045,7 @@ private:
         stereoDeemphasis;
     std::unique_ptr<dsp::filter::FIR<float, float>> monoHighPass;
     std::unique_ptr<dsp::filter::FIR<dsp::stereo_t, float>> stereoHighPass;
+    std::unique_ptr<dsp::filter::FIR<float, float>> nfmVoiceLowPass;
 
     std::vector<dsp::complex_t> rfInput;
     std::vector<dsp::complex_t> translatedBuffer;
@@ -1286,6 +1321,21 @@ int sdrpp_dsp_set_nfm_options(
     }
     try {
         asEngine(engine)->setNfmOptions(low_pass != 0);
+        return 0;
+    }
+    catch (...) {
+        return -1;
+    }
+}
+
+int sdrpp_dsp_set_nfm_voice_filter(
+    sdrpp_engine_t engine,
+    int enabled) {
+    if (!engine) {
+        return -1;
+    }
+    try {
+        asEngine(engine)->setNfmVoiceFilter(enabled != 0);
         return 0;
     }
     catch (...) {
