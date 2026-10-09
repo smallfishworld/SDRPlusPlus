@@ -110,6 +110,10 @@ SDRPP_MOBILE_API int sdrpp_dsp_set_nfm_options(
     sdrpp_engine_t engine,
     int low_pass);
 
+SDRPP_MOBILE_API int sdrpp_dsp_set_nfm_voice_filter(
+    sdrpp_engine_t engine,
+    int enabled);
+
 SDRPP_MOBILE_API int sdrpp_dsp_set_wfm_options(
     sdrpp_engine_t engine,
     int stereo,
