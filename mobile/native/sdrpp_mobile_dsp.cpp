@@ -977,7 +977,7 @@ private:
     float cwAgcAttackMs = 100.0f;
     float cwAgcDecayMs = 5.0f;
     bool nfmLowPass = true;
-    bool wfmStereo = true;
+    bool wfmStereo = false;
     bool wfmLowPass = true;
     bool wfmRdsEnabled = true;
 
