@@ -106,6 +106,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   double _detectedCtcssHz = 0;
   bool _fmIfNrEnabled = false;
   int _fmIfNrPreset = 1; // Voice
+  String _fmProfile = 'Clean';
 
   bool _amCarrierAgc = false;
   double _amAgcAttackMs = 50;
@@ -116,7 +117,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   double _cwAgcAttackMs = 100;
   double _cwAgcDecayMs = 5;
   bool _nfmLowPass = true;
-  bool _wfmStereo = true;
+  bool _wfmStereo = false;
   bool _wfmLowPass = true;
   bool _wfmRdsEnabled = true;
 
@@ -182,17 +183,17 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     _Preset('Hangzhou Approach 2', 126050000, 'AM', 10000, 'Airband'),
 
     // Hangzhou / Zhejiang public FM broadcasting.
-    _Preset('浙江之声', 88000000, 'WFM', 180000, 'Hangzhou FM'),
-    _Preset('杭州之声', 89000000, 'WFM', 180000, 'Hangzhou FM'),
-    _Preset('Z907 城市资讯', 90700000, 'WFM', 180000, 'Hangzhou FM'),
-    _Preset('杭州交通 918', 91800000, 'WFM', 180000, 'Hangzhou FM'),
-    _Preset('浙江交通之声', 93000000, 'WFM', 180000, 'Hangzhou FM'),
-    _Preset('浙江经济广播', 95000000, 'WFM', 180000, 'Hangzhou FM'),
-    _Preset('动听 968', 96800000, 'WFM', 180000, 'Hangzhou FM'),
-    _Preset('浙江民生资讯', 99600000, 'WFM', 180000, 'Hangzhou FM'),
-    _Preset('浙江旅游之声', 104500000, 'WFM', 180000, 'Hangzhou FM'),
-    _Preset('西湖之声', 105400000, 'WFM', 180000, 'Hangzhou FM'),
-    _Preset('浙江城市之声', 107000000, 'WFM', 180000, 'Hangzhou FM'),
+    _Preset('浙江之声', 88000000, 'WFM', 150000, 'Hangzhou FM'),
+    _Preset('杭州之声', 89000000, 'WFM', 150000, 'Hangzhou FM'),
+    _Preset('Z907 城市资讯', 90700000, 'WFM', 150000, 'Hangzhou FM'),
+    _Preset('杭州交通 918', 91800000, 'WFM', 150000, 'Hangzhou FM'),
+    _Preset('浙江交通之声', 93000000, 'WFM', 150000, 'Hangzhou FM'),
+    _Preset('浙江经济广播', 95000000, 'WFM', 150000, 'Hangzhou FM'),
+    _Preset('动听 968', 96800000, 'WFM', 150000, 'Hangzhou FM'),
+    _Preset('浙江民生资讯', 99600000, 'WFM', 150000, 'Hangzhou FM'),
+    _Preset('浙江旅游之声', 104500000, 'WFM', 150000, 'Hangzhou FM'),
+    _Preset('西湖之声', 105400000, 'WFM', 150000, 'Hangzhou FM'),
+    _Preset('浙江城市之声', 107000000, 'WFM', 150000, 'Hangzhou FM'),
 
     // Common amateur-radio receive presets around Hangzhou.
     _Preset('杭州 2m 常用直频', 145100000, 'NFM', 12500, 'Amateur Radio'),
@@ -797,9 +798,19 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
             _detectedCtcssHz = 0;
           }
           if (mode == 'WFM') {
+            // Match SDR++'s 150 kHz broadcast-FM deviation model and prefer
+            // clean mono + IF noise reduction for weak/mobile reception.
+            _fmIfNrEnabled = true;
             _fmIfNrPreset = 3;
+            _fmProfile = 'Clean';
+            _wfmStereo = false;
+            _wfmLowPass = true;
+            _deemphasisUs = 50;
+            _highPassEnabled = false;
+            _noiseBlankerEnabled = false;
           }
           else if (mode == 'NFM' && _fmIfNrPreset == 3) {
+            _fmIfNrEnabled = false;
             _fmIfNrPreset = 1;
           }
           else if (mode != 'NFM') {
@@ -3110,6 +3121,55 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
 
     if (_mode == 'WFM') {
       widgets.addAll(<Widget>[
+        const SizedBox(height: 6),
+        const Text(
+          'FM quality',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 8),
+        SegmentedButton<String>(
+          segments: const <ButtonSegment<String>>[
+            ButtonSegment<String>(
+              value: 'Clean',
+              label: Text('Clean'),
+              icon: Icon(Icons.cleaning_services_rounded),
+            ),
+            ButtonSegment<String>(
+              value: 'Stereo',
+              label: Text('Stereo'),
+              icon: Icon(Icons.surround_sound_rounded),
+            ),
+            ButtonSegment<String>(
+              value: 'HiFi',
+              label: Text('Hi-Fi'),
+              icon: Icon(Icons.graphic_eq_rounded),
+            ),
+          ],
+          selected: <String>{_fmProfile},
+          onSelectionChanged: (selection) {
+            if (selection.isEmpty) {
+              return;
+            }
+            _applyFmProfile(selection.first);
+          },
+        ),
+        const SizedBox(height: 6),
+        Text(
+          _fmProfile == 'Clean'
+              ? 'Best for mobile/weak signals: mono + Broadcast IF noise reduction.'
+              : _fmProfile == 'Stereo'
+                  ? 'Stereo with Broadcast IF noise reduction enabled.'
+                  : 'Stereo with IF noise reduction off for strong, clean stations.',
+          style: const TextStyle(
+            color: Color(0xFF7F91A5),
+            fontSize: 12,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 8),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Stereo'),
@@ -3589,6 +3649,46 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       setState(() => _volume = result);
       _audio.setVolume(result);
     }
+  }
+
+  void _applyFmProfile(String profile) {
+    setState(() {
+      _fmProfile = profile;
+      _bandwidthKhz = 150;
+      _wfmLowPass = true;
+      _deemphasisUs = 50;
+      _highPassEnabled = false;
+      _noiseBlankerEnabled = false;
+
+      switch (profile) {
+        case 'Clean':
+          _wfmStereo = false;
+          _fmIfNrEnabled = true;
+          _fmIfNrPreset = 3;
+          break;
+        case 'Stereo':
+          _wfmStereo = true;
+          _fmIfNrEnabled = true;
+          _fmIfNrPreset = 3;
+          break;
+        case 'HiFi':
+          _wfmStereo = true;
+          _fmIfNrEnabled = false;
+          _fmIfNrPreset = 3;
+          break;
+      }
+    });
+
+    _client.setBandwidth(150000);
+    _client.setDeemphasis(50);
+    _client.setHighPass(false);
+    _client.setNoiseBlanker(false, _noiseBlankerLevel);
+    _client.setFmIfNr(_fmIfNrEnabled, _fmIfNrPreset);
+    _client.setWfmOptions(
+      _wfmStereo,
+      _wfmLowPass,
+      _wfmRdsEnabled,
+    );
   }
 
   void _applyRadioDetailOptions() {
