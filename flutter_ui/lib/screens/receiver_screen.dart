@@ -678,7 +678,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                 right: 12,
                 top: 10,
                 child: _tinyBadge(
-                  '$_mode · SNR ${_currentPeakAboveNoise().toStringAsFixed(1)} dB',
+                  '$_mode · Peak Δ ${_currentPeakAboveNoise().toStringAsFixed(1)} dB',
                 ),
               ),
               Positioned(
@@ -3220,6 +3220,11 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
               icon: Icon(Icons.cleaning_services_rounded),
             ),
             ButtonSegment<String>(
+              value: 'Weak',
+              label: Text('Weak'),
+              icon: Icon(Icons.signal_cellular_alt_1_bar_rounded),
+            ),
+            ButtonSegment<String>(
               value: 'Stereo',
               label: Text('Stereo'),
               icon: Icon(Icons.surround_sound_rounded),
@@ -3241,10 +3246,12 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         const SizedBox(height: 6),
         Text(
           _fmProfile == 'Clean'
-              ? 'Best for mobile/weak signals: mono + Broadcast IF noise reduction.'
-              : _fmProfile == 'Stereo'
-                  ? 'Stereo with Broadcast IF noise reduction enabled.'
-                  : 'Stereo with IF noise reduction off for strong, clean stations.',
+              ? 'Low-noise default: mono + 15 kHz audio low-pass, IF noise reduction off.'
+              : _fmProfile == 'Weak'
+                  ? 'Weak-signal mode: mono + Broadcast IF noise reduction.'
+                  : _fmProfile == 'Stereo'
+                      ? 'Stereo + 15 kHz low-pass, IF noise reduction off.'
+                      : 'Stereo with minimum processing for strong, clean stations.',
           style: const TextStyle(
             color: Color(0xFF7F91A5),
             fontSize: 12,
@@ -3745,18 +3752,24 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       switch (profile) {
         case 'Clean':
           _wfmStereo = false;
+          _fmIfNrEnabled = false;
+          _fmIfNrPreset = 3;
+          break;
+        case 'Weak':
+          _wfmStereo = false;
           _fmIfNrEnabled = true;
           _fmIfNrPreset = 3;
           break;
         case 'Stereo':
           _wfmStereo = true;
-          _fmIfNrEnabled = true;
+          _fmIfNrEnabled = false;
           _fmIfNrPreset = 3;
           break;
         case 'HiFi':
           _wfmStereo = true;
           _fmIfNrEnabled = false;
           _fmIfNrPreset = 3;
+          _wfmLowPass = false;
           break;
       }
     });
@@ -3946,7 +3959,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       if (preset.mode == 'WFM') {
         // Broadcast presets start in the low-noise mobile profile.
         _fmProfile = 'Clean';
-        _fmIfNrEnabled = true;
+        _fmIfNrEnabled = false;
         _fmIfNrPreset = 3;
         _wfmStereo = false;
         _wfmLowPass = true;
