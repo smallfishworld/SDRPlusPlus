@@ -824,6 +824,10 @@ class RtlTcpClient {
     _dsp.setNfmOptions(lowPass);
   }
 
+  void setNfmVoiceFilter(bool enabled) {
+    _dsp.setNfmVoiceFilter(enabled);
+  }
+
   void setWfmOptions(bool stereo, bool lowPass, bool rdsEnabled) {
     _dsp.setWfmOptions(stereo, lowPass, rdsEnabled);
   }
