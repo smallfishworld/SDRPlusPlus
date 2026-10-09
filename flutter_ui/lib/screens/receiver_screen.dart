@@ -745,13 +745,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                       : '${_bandwidthKhz.toStringAsFixed(1)} kHz',
                   _showBandwidthSheet,
                 ),
-                _metric(
-                  'SQL',
-                  _squelchEnabled
-                      ? '${_squelchDb.toStringAsFixed(0)} dB'
-                      : 'Off',
-                  _showSquelchSheet,
-                ),
+                _squelchQuickMetric(),
                 _metric(
                   'GAIN',
                   _tunerAgc ? 'Auto' : '${_manualGainDb.toStringAsFixed(1)} dB',
@@ -850,6 +844,92 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         ),
       ),
     );
+  }
+
+  Widget _squelchQuickMetric() {
+    final enabled = _squelchEnabled;
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(13),
+        onTap: _toggleSquelch,
+        onLongPress: _showSquelchSheet,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(13),
+            color: enabled
+                ? const Color(0x1F35D0FF)
+                : Colors.transparent,
+            border: Border.all(
+              color: enabled
+                  ? const Color(0xFF35D0FF)
+                  : Colors.transparent,
+            ),
+          ),
+          child: Column(
+            children: <Widget>[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Icon(
+                    enabled
+                        ? Icons.volume_off_rounded
+                        : Icons.volume_up_rounded,
+                    size: 13,
+                    color: enabled
+                        ? const Color(0xFF6FE3FF)
+                        : const Color(0xFF607286),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'SQL',
+                    style: TextStyle(
+                      fontSize: 10,
+                      letterSpacing: 0.8,
+                      color: enabled
+                          ? const Color(0xFF6FE3FF)
+                          : const Color(0xFF607286),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              Text(
+                enabled
+                    ? 'ON ${_squelchDb.toStringAsFixed(0)}'
+                    : 'OFF',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: enabled
+                      ? const Color(0xFF9DEBFF)
+                      : null,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _toggleSquelch() {
+    final enabled = !_squelchEnabled;
+    setState(() {
+      _squelchEnabled = enabled;
+      if (enabled) {
+        // Power squelch and tone squelch are mutually exclusive, matching
+        // SDR++ RadioModule semantics.
+        _ctcssMode = 0;
+        _detectedCtcssHz = 0;
+      }
+    });
+
+    _client.setSquelch(enabled, _squelchDb);
+    if (enabled) {
+      _client.setCtcss(0, _ctcssToneIndex);
+    }
   }
 
   Widget _metric(String label, String value, VoidCallback onTap) {
