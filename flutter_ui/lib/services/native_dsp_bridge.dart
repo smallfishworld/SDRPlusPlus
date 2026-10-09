@@ -92,6 +92,9 @@ typedef _SetCwOptionsDart = int Function(
 typedef _SetNfmOptionsNative = Int32 Function(Pointer<Void>, Int32);
 typedef _SetNfmOptionsDart = int Function(Pointer<Void>, int);
 
+typedef _SetNfmVoiceFilterNative = Int32 Function(Pointer<Void>, Int32);
+typedef _SetNfmVoiceFilterDart = int Function(Pointer<Void>, int);
+
 typedef _SetWfmOptionsNative = Int32 Function(
   Pointer<Void>,
   Int32,
@@ -159,6 +162,7 @@ class NativeDspBridge {
     this._setSsbAgc,
     this._setCwOptions,
     this._setNfmOptions,
+    this._setNfmVoiceFilter,
     this._setWfmOptions,
     this._getRds,
     this._reset,
@@ -188,6 +192,7 @@ class NativeDspBridge {
   final _SetSsbAgcDart _setSsbAgc;
   final _SetCwOptionsDart _setCwOptions;
   final _SetNfmOptionsDart _setNfmOptions;
+  final _SetNfmVoiceFilterDart _setNfmVoiceFilter;
   final _SetWfmOptionsDart _setWfmOptions;
   final _GetRdsDart _getRds;
   final _ResetDart _reset;
@@ -254,6 +259,9 @@ class NativeDspBridge {
       final setNfmOptions = library.lookupFunction<
           _SetNfmOptionsNative,
           _SetNfmOptionsDart>('sdrpp_dsp_set_nfm_options');
+      final setNfmVoiceFilter = library.lookupFunction<
+          _SetNfmVoiceFilterNative,
+          _SetNfmVoiceFilterDart>('sdrpp_dsp_set_nfm_voice_filter');
       final setWfmOptions = library.lookupFunction<
           _SetWfmOptionsNative,
           _SetWfmOptionsDart>('sdrpp_dsp_set_wfm_options');
@@ -296,6 +304,7 @@ class NativeDspBridge {
         setSsbAgc,
         setCwOptions,
         setNfmOptions,
+        setNfmVoiceFilter,
         setWfmOptions,
         getRds,
         reset,
@@ -451,6 +460,12 @@ class NativeDspBridge {
   void setNfmOptions({required bool lowPass}) {
     if (!_disposed) {
       _setNfmOptions(_handle, lowPass ? 1 : 0);
+    }
+  }
+
+  void setNfmVoiceFilter(bool enabled) {
+    if (!_disposed) {
+      _setNfmVoiceFilter(_handle, enabled ? 1 : 0);
     }
   }
 
