@@ -117,6 +117,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   double _cwAgcAttackMs = 100;
   double _cwAgcDecayMs = 5;
   bool _nfmLowPass = true;
+  bool _nfmVoiceFilter = true;
   bool _wfmStereo = false;
   bool _wfmLowPass = true;
   bool _wfmRdsEnabled = true;
@@ -805,11 +806,18 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
             _highPassEnabled = false;
             _noiseBlankerEnabled = false;
           }
-          else if (mode == 'NFM' && _fmIfNrPreset == 3) {
-            _fmIfNrEnabled = false;
+          else if (mode == 'NFM') {
+            // Handheld-style communications profile: keep the official FM
+            // detector low-pass, suppress IF noise and limit recovered audio
+            // to the voice band instead of exposing discriminator hiss.
+            _fmIfNrEnabled = true;
             _fmIfNrPreset = 1;
+            _highPassEnabled = true;
+            _nfmLowPass = true;
+            _nfmVoiceFilter = true;
+            _noiseBlankerEnabled = false;
           }
-          else if (mode != 'NFM') {
+          else {
             _fmIfNrEnabled = false;
           }
         });
@@ -3191,11 +3199,31 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('NFM low-pass'),
-          subtitle: const Text('Official FM demodulator low-pass'),
+          subtitle: const Text('Official FM discriminator low-pass'),
           value: _nfmLowPass,
           onChanged: (value) {
             setState(() => _nfmLowPass = value);
             _client.setNfmOptions(value);
+          },
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Voice clean filter'),
+          subtitle: const Text(
+            '300 Hz high-pass + 3.2 kHz voice low-pass for handheld-style audio',
+          ),
+          value: _nfmVoiceFilter,
+          onChanged: (value) {
+            setState(() {
+              _nfmVoiceFilter = value;
+              if (value) {
+                _highPassEnabled = true;
+              }
+            });
+            _client.setNfmVoiceFilter(value);
+            if (value) {
+              _client.setHighPass(true);
+            }
           },
         ),
       ]);
@@ -3804,6 +3832,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       _cwAgcDecayMs,
     );
     _client.setNfmOptions(_nfmLowPass);
+    _client.setNfmVoiceFilter(_nfmVoiceFilter);
     _client.setWfmOptions(
       _wfmStereo,
       _wfmLowPass,
@@ -3956,7 +3985,15 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       _mode = preset.mode;
       _bandwidthKhz = preset.bandwidthHz / 1000;
 
-      if (preset.mode == 'WFM') {
+      if (preset.mode == 'NFM') {
+        _fmIfNrEnabled = true;
+        _fmIfNrPreset = 1;
+        _highPassEnabled = true;
+        _nfmLowPass = true;
+        _nfmVoiceFilter = true;
+        _noiseBlankerEnabled = false;
+      }
+      else if (preset.mode == 'WFM') {
         // Broadcast presets start in the low-noise mobile profile.
         _fmProfile = 'Clean';
         _fmIfNrEnabled = false;
