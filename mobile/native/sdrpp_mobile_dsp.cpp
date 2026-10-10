@@ -80,6 +80,7 @@ public:
         if (rfResampler) {
             rfResampler->reset();
         }
+        beginAudioTransition();
     }
 
     void reset() {
@@ -111,6 +112,7 @@ public:
         if (fmIfNr) {
             fmIfNr->reset();
         }
+        beginAudioTransition();
 
         // SSB/CW and CTCSS detector state are easiest to reset by rebuilding
         // their official SDR++ blocks after a retune.
@@ -291,10 +293,11 @@ public:
                 static_cast<size_t>(audioFrames),
                 frameCapacity);
             for (size_t i = 0; i < writeFrames; ++i) {
+                const float fade = nextAudioFadeGain();
                 const float left =
-                    std::clamp(stereoData[i].l, -1.0f, 1.0f);
+                    softLimit(stereoData[i].l * fade);
                 const float right =
-                    std::clamp(stereoData[i].r, -1.0f, 1.0f);
+                    softLimit(stereoData[i].r * fade);
                 outPcm[i * 2] =
                     static_cast<int16_t>(std::lrint(left * 30000.0f));
                 outPcm[i * 2 + 1] =
@@ -373,10 +376,11 @@ public:
             frameCapacity);
 
         for (size_t i = 0; i < writeFrames; ++i) {
+            const float fade = nextAudioFadeGain();
             const float left =
-                std::clamp(finalStereo[i].l, -1.0f, 1.0f);
+                softLimit(finalStereo[i].l * fade);
             const float right =
-                std::clamp(finalStereo[i].r, -1.0f, 1.0f);
+                softLimit(finalStereo[i].r * fade);
             outPcm[i * 2] =
                 static_cast<int16_t>(std::lrint(left * 30000.0f));
             outPcm[i * 2 + 1] =
@@ -564,6 +568,41 @@ public:
     }
 
 private:
+    static float softLimit(float sample) {
+        // Gentle output knee avoids harsh flat-top clipping on strong FM or
+        // AGC transients while leaving normal speech/music nearly untouched.
+        const float knee = 0.84f;
+        const float magnitude = std::fabs(sample);
+        if (magnitude <= knee) {
+            return sample;
+        }
+        const float room = 1.0f - knee;
+        const float compressed =
+            knee + room * (1.0f - std::exp(-(magnitude - knee) / room));
+        return std::copysign(
+            std::min(compressed, 0.999f),
+            sample);
+    }
+
+    void beginAudioTransition() {
+        audioFadeFramesRemaining =
+            static_cast<int>(kOutputSampleRate * 0.006);
+        audioFadeFramesTotal = audioFadeFramesRemaining;
+    }
+
+    float nextAudioFadeGain() {
+        if (audioFadeFramesRemaining <= 0 ||
+            audioFadeFramesTotal <= 0) {
+            return 1.0f;
+        }
+        const float gain =
+            1.0f -
+            static_cast<float>(audioFadeFramesRemaining) /
+                static_cast<float>(audioFadeFramesTotal);
+        --audioFadeFramesRemaining;
+        return std::clamp(gain, 0.0f, 1.0f);
+    }
+
     static int ifNrBins(int preset) {
         switch (preset) {
             case 0: return 9;   // NOAA APT
@@ -993,6 +1032,8 @@ private:
     sdrpp_mode_t mode = SDRPP_MODE_AM;
     float bandwidth = 10000.0f;
     double frequencyOffsetHz = 0.0;
+    int audioFadeFramesRemaining = 0;
+    int audioFadeFramesTotal = 0;
 
     bool squelchEnabled = false;
     float squelchLevelDb = -82.0f;
