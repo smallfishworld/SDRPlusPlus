@@ -58,7 +58,7 @@ class RtlTcpClient {
   String _lastError = '';
   int _headerBytesRemaining = 12;
   int _frequencyHz = 127250000;
-  int _sampleRateHz = 1024000;
+  int _sampleRateHz = 2400000;
   String _mode = 'AM';
   double _bandwidthHz = 10000;
   bool _nativeSourceActive = false;
@@ -92,7 +92,7 @@ class RtlTcpClient {
   Future<void> connect({
     required String host,
     required int port,
-    int sampleRateHz = 1024000,
+    int sampleRateHz = 2400000,
     int frequencyHz = 127250000,
     String mode = 'AM',
     double bandwidthHz = 10000,
@@ -503,7 +503,7 @@ class RtlTcpClient {
 
   Future<void> connectRtlSdrUsb({
     required String deviceName,
-    int sampleRateHz = 1024000,
+    int sampleRateHz = 2400000,
     int frequencyHz = 127250000,
     String mode = 'AM',
     double bandwidthHz = 10000,
