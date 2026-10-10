@@ -84,6 +84,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   int _tab = 0;
   String _presetCategory = 'All';
   int _frequencyHz = 127250000;
+  int _centerFrequencyHz = 127250000;
+  int? _panPreviewCenterFrequencyHz;
+  int _panStartCenterFrequencyHz = 127250000;
+  double _panDragTotalPx = 0;
   int _sampleRateHz = 2400000;
   String _mode = 'AM';
   double _bandwidthKhz = 10;
@@ -124,7 +128,6 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
 
   double _volume = 0.72;
   int _tuningStepHz = 25000;
-  double _dragAccumulatorPx = 0;
   bool _scanning = false;
   int _scanFrequencyHz = 118000000;
   RtlTcpConnectionState _connectionState =
