@@ -4574,11 +4574,13 @@ class SpectrumPainter extends CustomPainter {
     required this.spectrum,
     required this.centerFrequencyHz,
     required this.sampleRateHz,
+    required this.horizontalShiftHz,
   });
 
   final Float32List spectrum;
   final int centerFrequencyHz;
   final int sampleRateHz;
+  final double horizontalShiftHz;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -4601,7 +4603,10 @@ class SpectrumPainter extends CustomPainter {
       final path = Path();
       for (var i = 0; i < spectrum.length; i++) {
         final denominator = math.max(1, spectrum.length - 1).toDouble();
-        final x = size.width * i / denominator;
+        final shiftPx = sampleRateHz == 0
+            ? 0.0
+            : horizontalShiftHz / sampleRateHz * size.width;
+        final x = size.width * i / denominator + shiftPx;
         final normalized = ((spectrum[i] - minDb) / (maxDb - minDb))
             .clamp(0.0, 1.0)
             .toDouble();
@@ -4640,14 +4645,6 @@ class SpectrumPainter extends CustomPainter {
     }
 
     final center = size.width / 2;
-    canvas.drawLine(
-      Offset(center, 0),
-      Offset(center, size.height),
-      Paint()
-        ..color = const Color(0xFFFF5D73)
-        ..strokeWidth = 1.3,
-    );
-
     final leftMhz = (centerFrequencyHz - sampleRateHz / 2) / 1000000;
     final centerMhz = centerFrequencyHz / 1000000;
     final rightMhz = (centerFrequencyHz + sampleRateHz / 2) / 1000000;
@@ -4684,14 +4681,21 @@ class SpectrumPainter extends CustomPainter {
   bool shouldRepaint(covariant SpectrumPainter oldDelegate) {
     return oldDelegate.spectrum != spectrum ||
         oldDelegate.centerFrequencyHz != centerFrequencyHz ||
-        oldDelegate.sampleRateHz != sampleRateHz;
+        oldDelegate.sampleRateHz != sampleRateHz ||
+        oldDelegate.horizontalShiftHz != horizontalShiftHz;
   }
 }
 
 class WaterfallPainter extends CustomPainter {
-  WaterfallPainter({required this.history});
+  WaterfallPainter({
+    required this.history,
+    required this.horizontalShiftHz,
+    required this.sampleRateHz,
+  });
 
   final List<Float32List> history;
+  final double horizontalShiftHz;
+  final int sampleRateHz;
 
   static const minDb = -115.0;
   static const maxDb = -25.0;
@@ -4727,6 +4731,13 @@ class WaterfallPainter extends CustomPainter {
     final rows = history.length < 92 ? history.length : 92;
     final rowHeight = size.height / rows;
     final paint = Paint();
+    final shiftPx = sampleRateHz == 0
+        ? 0.0
+        : horizontalShiftHz / sampleRateHz * size.width;
+
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    canvas.translate(shiftPx, 0);
 
     for (var row = 0; row < rows; row++) {
       final bins = history[row];
@@ -4745,13 +4756,7 @@ class WaterfallPainter extends CustomPainter {
       }
     }
 
-    canvas.drawLine(
-      Offset(size.width / 2, 0),
-      Offset(size.width / 2, size.height),
-      Paint()
-        ..color = const Color(0x99FF5D73)
-        ..strokeWidth = 1,
-    );
+    canvas.restore();
   }
 
   Color _heatColor(double db) {
@@ -4789,5 +4794,9 @@ class WaterfallPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant WaterfallPainter oldDelegate) => true;
+  bool shouldRepaint(covariant WaterfallPainter oldDelegate) {
+    return oldDelegate.history != history ||
+        oldDelegate.horizontalShiftHz != horizontalShiftHz ||
+        oldDelegate.sampleRateHz != sampleRateHz;
+  }
 }
