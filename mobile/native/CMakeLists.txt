@@ -26,11 +26,39 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(sdrpp_mobile PRIVATE dl)
 endif()
 
-# The compatibility include must come before SDR++ core/src so <volk/volk.h>
-# resolves to the portable bridge shim. The actual DSP implementation is
-# directly compiled from SDR++'s official header-only DSP blocks.
+option(
+    SDRPP_MOBILE_USE_REAL_DSP_LIBS
+    "Use real VOLK/FFTW instead of scalar compatibility shims"
+    OFF
+)
+set(
+    SDRPP_MOBILE_DSP_PREFIX
+    ""
+    CACHE PATH
+    "Prefix containing include/ and lib/ for VOLK/FFTW"
+)
+
+# The host smoke tests can use the scalar compatibility shims, but production
+# Android builds should use the same optimized VOLK/FFTW stack as upstream
+# SDR++ to avoid DSP starvation and quality/performance differences.
+if(SDRPP_MOBILE_USE_REAL_DSP_LIBS)
+    if(NOT SDRPP_MOBILE_DSP_PREFIX)
+        message(FATAL_ERROR "SDRPP_MOBILE_DSP_PREFIX is required")
+    endif()
+    target_include_directories(sdrpp_mobile PRIVATE
+        ${SDRPP_MOBILE_DSP_PREFIX}/include
+    )
+    target_link_directories(sdrpp_mobile PRIVATE
+        ${SDRPP_MOBILE_DSP_PREFIX}/lib
+    )
+    target_link_libraries(sdrpp_mobile PRIVATE volk fftw3f)
+else()
+    target_include_directories(sdrpp_mobile PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/compat
+    )
+endif()
+
 target_include_directories(sdrpp_mobile PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/compat
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../core/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../decoder_modules/radio/src
