@@ -795,12 +795,13 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
             _detectedCtcssHz = 0;
           }
           if (mode == 'WFM') {
-            // Match SDR++'s 150 kHz broadcast-FM deviation model and prefer
-            // clean mono + IF noise reduction for weak/mobile reception.
-            _fmIfNrEnabled = true;
+            // Broadcast music should default to the same full 15 kHz stereo
+            // path users expect from desktop SDR++. Weak-signal mono/IFNR
+            // remains available as the "Weak" profile.
+            _fmIfNrEnabled = false;
             _fmIfNrPreset = 3;
-            _fmProfile = 'Clean';
-            _wfmStereo = false;
+            _fmProfile = 'Stereo';
+            _wfmStereo = true;
             _wfmLowPass = true;
             _deemphasisUs = 50;
             _highPassEnabled = false;
@@ -3994,11 +3995,13 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         _noiseBlankerEnabled = false;
       }
       else if (preset.mode == 'WFM') {
-        // Broadcast presets start in the low-noise mobile profile.
-        _fmProfile = 'Clean';
+        // Public FM presets are music-first: stereo + the official 15 kHz
+        // BroadcastFM low-pass + 50 us de-emphasis. "Weak" switches to
+        // mono + broadcast IFNR when reception is marginal.
+        _fmProfile = 'Stereo';
         _fmIfNrEnabled = false;
         _fmIfNrPreset = 3;
-        _wfmStereo = false;
+        _wfmStereo = true;
         _wfmLowPass = true;
         _deemphasisUs = 50;
         _highPassEnabled = false;
