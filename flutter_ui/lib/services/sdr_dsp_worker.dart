@@ -1349,6 +1349,8 @@ class _DspProcessor {
   int sampleRateHz = 1024000;
   String mode = 'AM';
   double bandwidthHz = 10000;
+  double _frequencyOffsetHz = 0;
+  double _frequencyOffsetPhase = 0;
 
   int _fftSkipSamples = 0;
   DateTime _lastRdsPoll = DateTime.fromMillisecondsSinceEpoch(0);
@@ -1408,7 +1410,12 @@ class _DspProcessor {
   }
 
   void setFrequencyOffset(double value) {
+    _frequencyOffsetHz = value;
+    _frequencyOffsetPhase = 0;
     _native?.setFrequencyOffset(value);
+    if (_native == null) {
+      resetDemodState();
+    }
   }
 
   void setSampleRate(int value) {
@@ -2143,6 +2150,7 @@ class _DspProcessor {
     _deemphasisState = 0;
     _outputPhase = 0;
     _cwPhase = 0;
+    _frequencyOffsetPhase = 0;
     _rfPowerDb = -120;
     _pcmCount = 0;
   }
@@ -2220,8 +2228,27 @@ class _DspProcessor {
     final decimatedRate = sampleRateHz / decimation;
 
     for (var i = 0; i < sampleCount; i++) {
-      final re = (bytes[i * 2] - 127.5) / 127.5;
-      final im = (bytes[i * 2 + 1] - 127.5) / 127.5;
+      final rawI = (bytes[i * 2] - 127.5) / 127.5;
+      final rawQ = (bytes[i * 2 + 1] - 127.5) / 127.5;
+
+      var re = rawI;
+      var im = rawQ;
+      if (_frequencyOffsetHz.abs() > 0.01) {
+        final phase = _frequencyOffsetPhase;
+        final cosPhase = math.cos(phase);
+        final sinPhase = math.sin(phase);
+        // Translate the selected VFO to DC before decimation, matching the
+        // native SDR++ FrequencyXlator convention.
+        re = rawI * cosPhase + rawQ * sinPhase;
+        im = rawQ * cosPhase - rawI * sinPhase;
+        _frequencyOffsetPhase +=
+            2 * math.pi * _frequencyOffsetHz / sampleRateHz;
+        if (_frequencyOffsetPhase > math.pi) {
+          _frequencyOffsetPhase -= 2 * math.pi;
+        } else if (_frequencyOffsetPhase < -math.pi) {
+          _frequencyOffsetPhase += 2 * math.pi;
+        }
+      }
 
       _sumI += re;
       _sumQ += im;
