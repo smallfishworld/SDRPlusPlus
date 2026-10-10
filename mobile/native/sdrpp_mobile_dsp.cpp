@@ -1485,9 +1485,9 @@ uint32_t sdrpp_dsp_output_sample_rate(void) {
 
 const char* sdrpp_dsp_backend_name(void) {
 #ifdef SDRPP_MOBILE_REAL_DSP_LIBS
-    return "SDR++ official DSP core bridge v6 · real VOLK/FFTW · CTCSS + FM IFNR";
+    return "SDR++ official DSP core bridge v7 · real VOLK/FFTW · VFO + de-click audio";
 #else
-    return "SDR++ official DSP core bridge v6 · scalar compatibility DSP";
+    return "SDR++ official DSP core bridge v7 · scalar DSP · VFO + de-click audio";
 #endif
 }
 
