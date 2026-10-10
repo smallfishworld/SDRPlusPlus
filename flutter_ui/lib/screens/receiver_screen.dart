@@ -629,73 +629,181 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     final streamLabel = _connectionState == RtlTcpConnectionState.connected
         ? '${(_sampleRateHz / 1000000).toStringAsFixed(3)} MSPS'
         : 'No RF stream';
+    final displayCenter =
+        _panPreviewCenterFrequencyHz ?? _centerFrequencyHz;
 
     return LayoutBuilder(
-      builder: (context, constraints) => Card(
-        clipBehavior: Clip.antiAlias,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapUp: (details) => _handleSpectrumTap(
-            details.localPosition.dx,
-            constraints.maxWidth,
-          ),
-          onHorizontalDragStart: (_) => _dragAccumulatorPx = 0,
-          onHorizontalDragUpdate: (details) =>
-              _handleSpectrumDrag(details.primaryDelta ?? 0),
-          onHorizontalDragEnd: (_) => _dragAccumulatorPx = 0,
-          onDoubleTap: _showFrequencyPad,
-          child: Stack(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final vfoX = width <= 1
+            ? 0.0
+            : (width *
+                    (0.5 +
+                        (_frequencyHz - displayCenter) /
+                            _sampleRateHz))
+                .clamp(0.0, math.max(0.0, width - 2))
+                .toDouble();
+        final previewShiftHz =
+            (_centerFrequencyHz - displayCenter).toDouble();
+
+        return Card(
+          clipBehavior: Clip.antiAlias,
+          child: Column(
             children: <Widget>[
-              Positioned.fill(
-                child: Column(
-                  children: <Widget>[
-                    Expanded(
-                      flex: 43,
-                      child: CustomPaint(
-                        painter: SpectrumPainter(
-                          spectrum: _spectrum,
-                          centerFrequencyHz: _frequencyHz,
-                          sampleRateHz: _sampleRateHz,
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapUp: (details) => _handleVfoAtX(
+                    details.localPosition.dx,
+                    width,
+                  ),
+                  onHorizontalDragStart: (details) => _handleVfoAtX(
+                    details.localPosition.dx,
+                    width,
+                  ),
+                  onHorizontalDragUpdate: (details) => _handleVfoAtX(
+                    details.localPosition.dx,
+                    width,
+                  ),
+                  onDoubleTap: _showFrequencyPad,
+                  child: Stack(
+                    children: <Widget>[
+                      Positioned.fill(
+                        child: Column(
+                          children: <Widget>[
+                            Expanded(
+                              flex: 43,
+                              child: CustomPaint(
+                                painter: SpectrumPainter(
+                                  spectrum: _spectrum,
+                                  centerFrequencyHz: displayCenter,
+                                  sampleRateHz: _sampleRateHz,
+                                  horizontalShiftHz: previewShiftHz,
+                                ),
+                                child: const SizedBox.expand(),
+                              ),
+                            ),
+                            const Divider(
+                              height: 1,
+                              color: Color(0xFF1B2835),
+                            ),
+                            Expanded(
+                              flex: 57,
+                              child: CustomPaint(
+                                painter: WaterfallPainter(
+                                  history: _waterfall,
+                                  horizontalShiftHz: previewShiftHz,
+                                  sampleRateHz: _sampleRateHz,
+                                ),
+                                child: const SizedBox.expand(),
+                              ),
+                            ),
+                          ],
                         ),
-                        child: const SizedBox.expand(),
                       ),
-                    ),
-                    const Divider(height: 1, color: Color(0xFF1B2835)),
-                    Expanded(
-                      flex: 57,
-                      child: CustomPaint(
-                        painter: WaterfallPainter(
-                          history: _waterfall,
+                      Positioned(
+                        left: vfoX,
+                        top: 0,
+                        bottom: 0,
+                        child: IgnorePointer(
+                          child: Container(
+                            width: 2,
+                            color: const Color(0xFFFF5D73),
+                          ),
                         ),
-                        child: const SizedBox.expand(),
                       ),
-                    ),
-                  ],
+                      Positioned(
+                        left: (vfoX - 6).clamp(0.0, math.max(0.0, width - 12)),
+                        top: 0,
+                        child: const IgnorePointer(
+                          child: Icon(
+                            Icons.arrow_drop_down_rounded,
+                            color: Color(0xFFFF5D73),
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 12,
+                        top: 10,
+                        child: _tinyBadge(streamLabel),
+                      ),
+                      Positioned(
+                        right: 12,
+                        top: 10,
+                        child: _tinyBadge(
+                          '$_mode · Peak Δ ${_currentPeakAboveNoise().toStringAsFixed(1)} dB',
+                        ),
+                      ),
+                      Positioned(
+                        left: 12,
+                        bottom: 10,
+                        child: _tinyBadge(
+                          'Drag red VFO · step ${_formatStep(_tuningStepHz)}',
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              Positioned(
-                left: 12,
-                top: 10,
-                child: _tinyBadge(streamLabel),
-              ),
-              Positioned(
-                right: 12,
-                top: 10,
-                child: _tinyBadge(
-                  '$_mode · Peak Δ ${_currentPeakAboveNoise().toStringAsFixed(1)} dB',
-                ),
-              ),
-              Positioned(
-                left: 12,
-                bottom: 10,
-                child: _tinyBadge(
-                  'Tap/drag to tune · step ${_formatStep(_tuningStepHz)}',
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onHorizontalDragStart: (_) {
+                  _panStartCenterFrequencyHz = _centerFrequencyHz;
+                  _panDragTotalPx = 0;
+                },
+                onHorizontalDragUpdate: (details) {
+                  _handleSpectrumPan(
+                    details.primaryDelta ?? 0,
+                    width,
+                  );
+                },
+                onHorizontalDragEnd: (_) => _commitSpectrumPan(),
+                onHorizontalDragCancel: _cancelSpectrumPan,
+                child: Container(
+                  height: 38,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF0B121A),
+                    border: Border(
+                      top: BorderSide(color: Color(0xFF1B2835)),
+                    ),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      const Icon(
+                        Icons.drag_indicator_rounded,
+                        size: 17,
+                        color: Color(0xFF6E8195),
+                      ),
+                      const SizedBox(width: 7),
+                      const Text(
+                        'Pan spectrum',
+                        style: TextStyle(
+                          color: Color(0xFF8295A9),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        'Center ${(displayCenter / 1000000).toStringAsFixed(6)} MHz',
+                        style: const TextStyle(
+                          color: Color(0xFF67E8F9),
+                          fontSize: 11,
+                          fontFeatures: <FontFeature>[
+                            FontFeature.tabularFigures(),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
