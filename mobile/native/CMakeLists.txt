@@ -52,6 +52,10 @@ if(SDRPP_MOBILE_USE_REAL_DSP_LIBS)
         ${SDRPP_MOBILE_DSP_PREFIX}/lib
     )
     target_link_libraries(sdrpp_mobile PRIVATE volk fftw3f)
+    target_compile_definitions(
+        sdrpp_mobile
+        PRIVATE SDRPP_MOBILE_REAL_DSP_LIBS=1
+    )
 else()
     target_include_directories(sdrpp_mobile PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/compat
