@@ -87,7 +87,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   int _sampleRateHz = 2400000;
   String _mode = 'AM';
   double _bandwidthKhz = 10;
-  bool _tunerAgc = true;
+  bool _tunerAgc = false;
   bool _rtlAgc = false;
   bool _biasTee = false;
   bool _offsetTuning = false;
