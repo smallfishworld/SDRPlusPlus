@@ -648,7 +648,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         final passbandWidth = _sampleRateHz <= 0
             ? 2.0
             : (width * (_bandwidthKhz * 1000) / _sampleRateHz)
-                .clamp(2.0, width)
+                .clamp(2.0, math.max(2.0, width))
                 .toDouble();
         final passbandLeft = (vfoX - passbandWidth / 2)
             .clamp(0.0, math.max(0.0, width - passbandWidth))
