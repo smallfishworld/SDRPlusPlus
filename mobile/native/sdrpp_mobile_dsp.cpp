@@ -69,18 +69,13 @@ public:
             -halfRate,
             halfRate);
         if (channelXlator) {
+            // Changing only the NCO increment preserves phase/resampler state.
+            // This makes live VFO dragging continuous instead of producing a
+            // short mute or click on every pointer update.
             channelXlator->setOffset(
                 -frequencyOffsetHz,
                 inputSampleRate);
-            channelXlator->reset();
         }
-        if (channelXlator) {
-            channelXlator->reset();
-        }
-        if (rfResampler) {
-            rfResampler->reset();
-        }
-        beginAudioTransition();
     }
 
     void reset() {
