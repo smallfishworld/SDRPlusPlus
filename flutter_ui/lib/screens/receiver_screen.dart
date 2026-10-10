@@ -4014,11 +4014,15 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         frequencyHz.clamp(100000, 6000000000).toInt();
     setState(() {
       _frequencyHz = clamped;
+      _centerFrequencyHz = clamped;
+      _panPreviewCenterFrequencyHz = null;
       _scanFrequencyHz = clamped;
       _rdsProgramService = '';
       _rdsRadioText = '';
+      _detectedCtcssHz = 0;
     });
     _client.setFrequency(clamped);
+    _client.setFrequencyOffset(0);
 
     if (recoverAudio) {
       _scheduleAudioRecovery();
@@ -4044,30 +4048,100 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     });
   }
 
-  void _handleSpectrumTap(double x, double width) {
-    if (width <= 1) {
+  void _handleVfoAtX(double x, double width) {
+    if (width <= 1 || _sampleRateHz <= 0) {
       return;
     }
 
+    final displayCenter =
+        _panPreviewCenterFrequencyHz ?? _centerFrequencyHz;
     final normalized = (x / width).clamp(0.0, 1.0);
-    final offsetHz =
+    final rawTarget =
+        displayCenter +
         ((normalized - 0.5) * _sampleRateHz).round();
-    final target = _frequencyHz + offsetHz;
     final snapped =
-        (target / _tuningStepHz).round() * _tuningStepHz;
-    _tuneFrequency(snapped);
+        (rawTarget / _tuningStepHz).round() * _tuningStepHz;
+    _setVfoFrequency(snapped);
   }
 
-  void _handleSpectrumDrag(double deltaPx) {
-    _dragAccumulatorPx += deltaPx;
-    const pixelsPerStep = 7.0;
-    final wholeSteps = (_dragAccumulatorPx / pixelsPerStep).truncate();
-    if (wholeSteps == 0) {
+  void _setVfoFrequency(int frequencyHz) {
+    final halfUsableSpan = (_sampleRateHz * 0.46).round();
+    final minVisible = _centerFrequencyHz - halfUsableSpan;
+    final maxVisible = _centerFrequencyHz + halfUsableSpan;
+    final clamped = frequencyHz
+        .clamp(
+          math.max(100000, minVisible),
+          math.min(6000000000, maxVisible),
+        )
+        .toInt();
+
+    setState(() {
+      _frequencyHz = clamped;
+      _scanFrequencyHz = clamped;
+      _rdsProgramService = '';
+      _rdsRadioText = '';
+      _detectedCtcssHz = 0;
+    });
+
+    // Move only the VFO inside the currently sampled RF window. The hardware
+    // center frequency and the spectrum stay fixed, so tuning feels like a
+    // real SDR cursor instead of dragging the entire waterfall.
+    _client.setFrequencyOffset(
+      (_frequencyHz - _centerFrequencyHz).toDouble(),
+    );
+  }
+
+  void _handleSpectrumPan(double deltaPx, double width) {
+    if (width <= 1 || _sampleRateHz <= 0) {
       return;
     }
-    _dragAccumulatorPx -= wholeSteps * pixelsPerStep;
-    // Dragging the spectrum to the right moves the RF view down in frequency.
-    _tuneFrequency(_frequencyHz - wholeSteps * _tuningStepHz);
+
+    _panDragTotalPx += deltaPx;
+    final requestedCenter =
+        _panStartCenterFrequencyHz -
+        (_panDragTotalPx / width * _sampleRateHz).round();
+
+    // Keep the active VFO inside the sampled passband while panning. This
+    // preserves audio and prevents the selected channel from falling outside
+    // the native frequency translator's valid range.
+    final halfUsableSpan = (_sampleRateHz * 0.46).round();
+    final minCenter = _frequencyHz - halfUsableSpan;
+    final maxCenter = _frequencyHz + halfUsableSpan;
+    final bounded = requestedCenter
+        .clamp(
+          math.max(100000, minCenter),
+          math.min(6000000000, maxCenter),
+        )
+        .toInt();
+
+    setState(() {
+      _panPreviewCenterFrequencyHz = bounded;
+    });
+  }
+
+  void _commitSpectrumPan() {
+    final target = _panPreviewCenterFrequencyHz;
+    _panDragTotalPx = 0;
+    if (target == null) {
+      return;
+    }
+
+    setState(() {
+      _centerFrequencyHz = target;
+      _panPreviewCenterFrequencyHz = null;
+    });
+
+    _client.setFrequency(_centerFrequencyHz);
+    _client.setFrequencyOffset(
+      (_frequencyHz - _centerFrequencyHz).toDouble(),
+    );
+  }
+
+  void _cancelSpectrumPan() {
+    _panDragTotalPx = 0;
+    if (_panPreviewCenterFrequencyHz != null) {
+      setState(() => _panPreviewCenterFrequencyHz = null);
+    }
   }
 
   String _formatStep(int hz) {
