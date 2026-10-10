@@ -158,6 +158,13 @@ class SdrDspWorker {
     });
   }
 
+  void setFrequencyOffset(double offsetHz) {
+    _commandPort?.send(<String, Object>{
+      'type': 'frequencyOffset',
+      'offsetHz': offsetHz,
+    });
+  }
+
   void setSampleRate(int sampleRateHz) {
     _commandPort?.send(<String, Object>{
       'type': 'sampleRate',
@@ -985,6 +992,11 @@ void _sdrDspWorkerMain(SendPort mainPort) {
       case 'bandwidth':
         processor.setBandwidth((message['bandwidthHz'] as num).toDouble());
         break;
+      case 'frequencyOffset':
+        processor.setFrequencyOffset(
+          (message['offsetHz'] as num).toDouble(),
+        );
+        break;
       case 'sampleRate':
         processor.setSampleRate(message['sampleRateHz'] as int);
         break;
@@ -1393,6 +1405,10 @@ class _DspProcessor {
   void setBandwidth(double value) {
     bandwidthHz = value;
     _native?.setBandwidth(value);
+  }
+
+  void setFrequencyOffset(double value) {
+    _native?.setFrequencyOffset(value);
   }
 
   void setSampleRate(int value) {
