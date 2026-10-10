@@ -4053,6 +4053,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     });
     _client.setFrequency(clamped);
     _client.setFrequencyOffset(0);
+    _client.resetDsp();
 
     if (recoverAudio) {
       _scheduleAudioRecovery();
@@ -4156,7 +4157,17 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       return;
     }
 
+    final oldCenter = _centerFrequencyHz;
+    final shiftHz = oldCenter - target;
+
     setState(() {
+      // Bake the drag preview into the buffered FFT/waterfall rows before
+      // switching the hardware center. This prevents the display from
+      // snapping back for a frame while the tuner settles on the new center.
+      _spectrum = _shiftSpectrumBins(_spectrum, shiftHz);
+      for (var i = 0; i < _waterfall.length; i++) {
+        _waterfall[i] = _shiftSpectrumBins(_waterfall[i], shiftHz);
+      }
       _centerFrequencyHz = target;
       _panPreviewCenterFrequencyHz = null;
     });
@@ -4165,6 +4176,32 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     _client.setFrequencyOffset(
       (_frequencyHz - _centerFrequencyHz).toDouble(),
     );
+    _client.resetDsp();
+  }
+
+  Float32List _shiftSpectrumBins(Float32List input, int shiftHz) {
+    if (input.isEmpty || _sampleRateHz <= 0 || shiftHz == 0) {
+      return Float32List.fromList(input);
+    }
+
+    final shiftBins =
+        (shiftHz / _sampleRateHz * input.length).round();
+    if (shiftBins == 0) {
+      return Float32List.fromList(input);
+    }
+
+    final output = Float32List(input.length);
+    for (var i = 0; i < output.length; i++) {
+      output[i] = -115;
+    }
+
+    for (var source = 0; source < input.length; source++) {
+      final dest = source + shiftBins;
+      if (dest >= 0 && dest < output.length) {
+        output[dest] = input[source];
+      }
+    }
+    return output;
   }
 
   void _cancelSpectrumPan() {
