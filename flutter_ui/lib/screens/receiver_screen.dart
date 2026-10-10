@@ -2489,6 +2489,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         setState(() {
           _sampleRateHz = _client.sampleRateHz;
           _frequencyHz = _client.frequencyHz;
+          _centerFrequencyHz = _client.frequencyHz;
+          _panPreviewCenterFrequencyHz = null;
           _scanFrequencyHz = _frequencyHz;
           _tab = 0;
         });
@@ -2555,6 +2557,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         setState(() {
           _sampleRateHz = _client.sampleRateHz;
           _frequencyHz = _client.frequencyHz;
+          _centerFrequencyHz = _client.frequencyHz;
+          _panPreviewCenterFrequencyHz = null;
           _scanFrequencyHz = _frequencyHz;
           _tab = 0;
         });
@@ -2591,6 +2595,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         setState(() {
           _sampleRateHz = _client.sampleRateHz;
           _frequencyHz = _client.frequencyHz;
+          _centerFrequencyHz = _client.frequencyHz;
+          _panPreviewCenterFrequencyHz = null;
           _scanFrequencyHz = _frequencyHz;
           _tab = 0;
         });
@@ -2636,6 +2642,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         setState(() {
           _sampleRateHz = _client.sampleRateHz;
           _frequencyHz = _client.frequencyHz;
+          _centerFrequencyHz = _client.frequencyHz;
+          _panPreviewCenterFrequencyHz = null;
           _scanFrequencyHz = _frequencyHz;
           _tab = 0;
         });
@@ -3011,6 +3019,8 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
         setState(() {
           _sampleRateHz = _client.sampleRateHz;
           _frequencyHz = _client.frequencyHz;
+          _centerFrequencyHz = _client.frequencyHz;
+          _panPreviewCenterFrequencyHz = null;
           _scanFrequencyHz = _frequencyHz;
           _tab = 0;
         });
