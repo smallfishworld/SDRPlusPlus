@@ -219,17 +219,68 @@ jobs:
           bash "$GITHUB_WORKSPACE/tooling/build_android_soapy_airspy.sh"
           bash "$GITHUB_WORKSPACE/tooling/build_android_soapy_hackrf.sh"
 
+      - name: Build optimized VOLK and FFTW DSP dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          NDK="${ANDROID_NDK_ROOT:-${ANDROID_NDK_HOME:-}}"
+          test -n "$NDK"
+
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq patchelf
+
+          DEPS="$PWD/build/sdrpp-dsp-deps"
+          PREFIX="$DEPS/install"
+          rm -rf "$DEPS"
+          mkdir -p "$DEPS"
+          cd "$DEPS"
+
+          git clone --depth 1 --branch v3.1.2             https://github.com/gnuradio/volk.git volk
+          cmake             -S volk             -B volk-build             -G Ninja             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake"             -DANDROID_ABI=arm64-v8a             -DANDROID_PLATFORM=android-24             -DCMAKE_BUILD_TYPE=Release             -DCMAKE_INSTALL_PREFIX="$PREFIX"             -DENABLE_TESTING=OFF
+          cmake --build volk-build --parallel 2
+          cmake --install volk-build
+
+          curl -L --retry 3             https://www.fftw.org/fftw-3.3.10.tar.gz             -o fftw.tar.gz
+          tar -xzf fftw.tar.gz
+          cmake             -S fftw-3.3.10             -B fftw-build             -G Ninja             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake"             -DANDROID_ABI=arm64-v8a             -DANDROID_PLATFORM=android-24             -DCMAKE_BUILD_TYPE=Release             -DCMAKE_INSTALL_PREFIX="$PREFIX"             -DENABLE_FLOAT=ON             -DENABLE_TESTS=OFF
+          cmake --build fftw-build --parallel 2
+          cmake --install fftw-build
+
+          VOLK_REAL="$(find "$PREFIX/lib" -type f -name 'libvolk.so*' | head -n 1)"
+          FFTW_REAL="$(find "$PREFIX/lib" -type f -name 'libfftw3f.so*' | head -n 1)"
+          test -f "$VOLK_REAL"
+          test -f "$FFTW_REAL"
+
+          # Android jniLibs only packages unversioned *.so names. Match the
+          # upstream SDR++ Android runtime contract and keep NEEDED names stable.
+          patchelf --set-soname libvolk.so "$VOLK_REAL"
+          patchelf --set-soname libfftw3f.so "$FFTW_REAL"
+          cp "$VOLK_REAL" "$PREFIX/lib/libvolk.so"
+          cp "$FFTW_REAL" "$PREFIX/lib/libfftw3f.so"
+
+          file "$PREFIX/lib/libvolk.so" "$PREFIX/lib/libfftw3f.so"
+
       - name: Build official SDR++ DSP native bridge
         shell: bash
         run: |
           set -euxo pipefail
           NDK="${ANDROID_NDK_ROOT:-${ANDROID_NDK_HOME:-}}"
           test -n "$NDK"
-          cmake             -S ../mobile/native             -B build/sdrpp-native-arm64             -G Ninja             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake"             -DANDROID_ABI=arm64-v8a             -DANDROID_PLATFORM=android-24             -DCMAKE_BUILD_TYPE=Release
+          DSP_PREFIX="$PWD/build/sdrpp-dsp-deps/install"
+          test -f "$DSP_PREFIX/lib/libvolk.so"
+          test -f "$DSP_PREFIX/lib/libfftw3f.so"
+
+          cmake             -S ../mobile/native             -B build/sdrpp-native-arm64             -G Ninja             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake"             -DANDROID_ABI=arm64-v8a             -DANDROID_PLATFORM=android-24             -DCMAKE_BUILD_TYPE=Release             -DSDRPP_MOBILE_USE_REAL_DSP_LIBS=ON             -DSDRPP_MOBILE_DSP_PREFIX="$DSP_PREFIX"
           cmake --build build/sdrpp-native-arm64 --parallel 2
-          mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          cp build/sdrpp-native-arm64/libsdrpp_mobile.so              android/app/src/main/jniLibs/arm64-v8a/libsdrpp_mobile.so
-          file android/app/src/main/jniLibs/arm64-v8a/libsdrpp_mobile.so
+
+          JNI="android/app/src/main/jniLibs/arm64-v8a"
+          mkdir -p "$JNI"
+          cp build/sdrpp-native-arm64/libsdrpp_mobile.so "$JNI/libsdrpp_mobile.so"
+          cp "$DSP_PREFIX/lib/libvolk.so" "$JNI/libvolk.so"
+          cp "$DSP_PREFIX/lib/libfftw3f.so" "$JNI/libfftw3f.so"
+
+          file             "$JNI/libsdrpp_mobile.so"             "$JNI/libvolk.so"             "$JNI/libfftw3f.so"
+          readelf -d "$JNI/libsdrpp_mobile.so" | grep NEEDED
 
       - name: Verify complete SDR++ module mapping
         run: python3 ../tooling/check_module_catalog.py
