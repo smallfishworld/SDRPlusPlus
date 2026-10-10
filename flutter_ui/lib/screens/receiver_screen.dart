@@ -4791,9 +4791,5 @@ class WaterfallPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant WaterfallPainter oldDelegate) {
-    return oldDelegate.history != history ||
-        oldDelegate.horizontalShiftHz != horizontalShiftHz ||
-        oldDelegate.sampleRateHz != sampleRateHz;
-  }
+  bool shouldRepaint(covariant WaterfallPainter oldDelegate) => true;
 }
