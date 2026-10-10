@@ -2073,7 +2073,7 @@ private:
     uint32_t frequency = 127250000;
     std::string lastError;
 
-    bool tunerAgc = true;
+    bool tunerAgc = false;
     bool rtlAgc = false;
     int gainIndex = 0;
     int gainTenthDb = 0;
