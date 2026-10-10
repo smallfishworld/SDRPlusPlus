@@ -791,9 +791,6 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                         style: const TextStyle(
                           color: Color(0xFF67E8F9),
                           fontSize: 11,
-                          fontFeatures: <FontFeature>[
-                            FontFeature.tabularFigures(),
-                          ],
                         ),
                       ),
                     ],
