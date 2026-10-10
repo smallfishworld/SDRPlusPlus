@@ -19,6 +19,9 @@ typedef _SetModeDart = int Function(Pointer<Void>, int);
 typedef _SetBandwidthNative = Int32 Function(Pointer<Void>, Float);
 typedef _SetBandwidthDart = int Function(Pointer<Void>, double);
 
+typedef _SetFrequencyOffsetNative = Int32 Function(Pointer<Void>, Float);
+typedef _SetFrequencyOffsetDart = int Function(Pointer<Void>, double);
+
 typedef _SetSquelchNative =
     Int32 Function(Pointer<Void>, Int32, Float);
 typedef _SetSquelchDart =
@@ -151,6 +154,7 @@ class NativeDspBridge {
     this._setSampleRate,
     this._setMode,
     this._setBandwidth,
+    this._setFrequencyOffset,
     this._setSquelch,
     this._setNoiseBlanker,
     this._setHighPass,
@@ -181,6 +185,7 @@ class NativeDspBridge {
   final _SetSampleRateDart _setSampleRate;
   final _SetModeDart _setMode;
   final _SetBandwidthDart _setBandwidth;
+  final _SetFrequencyOffsetDart _setFrequencyOffset;
   final _SetSquelchDart _setSquelch;
   final _SetNoiseBlankerDart _setNoiseBlanker;
   final _SetHighPassDart _setHighPass;
@@ -226,6 +231,9 @@ class NativeDspBridge {
       final setBandwidth = library.lookupFunction<
           _SetBandwidthNative,
           _SetBandwidthDart>('sdrpp_dsp_set_bandwidth');
+      final setFrequencyOffset = library.lookupFunction<
+          _SetFrequencyOffsetNative,
+          _SetFrequencyOffsetDart>('sdrpp_dsp_set_frequency_offset');
       final setSquelch = library.lookupFunction<
           _SetSquelchNative,
           _SetSquelchDart>('sdrpp_dsp_set_squelch');
@@ -293,6 +301,7 @@ class NativeDspBridge {
         setSampleRate,
         setMode,
         setBandwidth,
+        setFrequencyOffset,
         setSquelch,
         setNoiseBlanker,
         setHighPass,
@@ -358,6 +367,12 @@ class NativeDspBridge {
   void setBandwidth(double bandwidthHz) {
     if (!_disposed) {
       _setBandwidth(_handle, bandwidthHz);
+    }
+  }
+
+  void setFrequencyOffset(double offsetHz) {
+    if (!_disposed) {
+      _setFrequencyOffset(_handle, offsetHz);
     }
   }
 
