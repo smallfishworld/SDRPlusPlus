@@ -275,7 +275,9 @@ class NativeRtlTcpSourceBridge {
     _spectrum = calloc<Float>(_spectrumCapacity);
   }
 
-  static const int _audioCapacity = 48000 * 2;
+  // Drain at most ~85 ms stereo PCM per poll. This prevents one delayed poll
+  // from sending a huge 1-second message through the isolate and audio sink.
+  static const int _audioCapacity = 8192;
   static const int _spectrumCapacity = 256;
 
   final Pointer<Void> _source;
