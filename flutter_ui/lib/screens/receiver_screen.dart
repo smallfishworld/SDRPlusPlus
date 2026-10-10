@@ -84,7 +84,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   int _tab = 0;
   String _presetCategory = 'All';
   int _frequencyHz = 127250000;
-  int _sampleRateHz = 1024000;
+  int _sampleRateHz = 2400000;
   String _mode = 'AM';
   double _bandwidthKhz = 10;
   bool _tunerAgc = true;
