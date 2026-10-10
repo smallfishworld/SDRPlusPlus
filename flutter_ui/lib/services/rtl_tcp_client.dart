@@ -712,6 +712,10 @@ class RtlTcpClient {
     _dsp.setBandwidth(bandwidthHz);
   }
 
+  void setFrequencyOffset(double offsetHz) {
+    _dsp.setFrequencyOffset(offsetHz);
+  }
+
   void setTunerAgc(bool enabled) {
     if (_nativeSourceActive) {
       _dsp.sourceSetTunerAgc(enabled);
