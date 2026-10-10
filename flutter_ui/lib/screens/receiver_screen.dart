@@ -645,6 +645,14 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                 .toDouble();
         final previewShiftHz =
             (_centerFrequencyHz - displayCenter).toDouble();
+        final passbandWidth = _sampleRateHz <= 0
+            ? 2.0
+            : (width * (_bandwidthKhz * 1000) / _sampleRateHz)
+                .clamp(2.0, width)
+                .toDouble();
+        final passbandLeft = (vfoX - passbandWidth / 2)
+            .clamp(0.0, math.max(0.0, width - passbandWidth))
+            .toDouble();
 
         return Card(
           clipBehavior: Clip.antiAlias,
@@ -699,6 +707,17 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                               ),
                             ),
                           ],
+                        ),
+                      ),
+                      Positioned(
+                        left: passbandLeft,
+                        top: 0,
+                        bottom: 0,
+                        width: passbandWidth,
+                        child: const IgnorePointer(
+                          child: ColoredBox(
+                            color: Color(0x12FF5D73),
+                          ),
                         ),
                       ),
                       Positioned(
