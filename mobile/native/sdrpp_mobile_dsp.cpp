@@ -891,6 +891,7 @@ private:
         ensureCtcssCapacity(65536);
         ensureRdsCapacity(8192);
         ensureRdsSymbolCapacity(8192);
+        beginAudioTransition();
     }
 
     int demodulate(int count) {
