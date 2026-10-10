@@ -31,8 +31,11 @@ namespace {
 
 constexpr std::size_t kSpectrumBins = 256;
 constexpr std::size_t kFftSize = 1024;
+// Keep the native queue short and live. A multi-second queue makes a brief
+// UI/Dart stall look like the receiver has frozen and then plays stale audio.
+// 500 ms is enough to absorb scheduling jitter while still recovering quickly.
 constexpr std::size_t kMaxBufferedPcm =
-    48000u * 2u * 6u; // 6 seconds stereo.
+    48000u * 2u / 2u; // 500 ms stereo.
 
 enum class MobileSourceKind : int {
     None = 0,
@@ -1487,6 +1490,10 @@ public:
         const std::size_t count =
             std::min<std::size_t>(capacity, spectrum.size());
         std::copy_n(spectrum.begin(), count, out);
+        // Each FFT frame is delivered once. Previously the Flutter poller
+        // received the same frame every 20 ms until the next 20 Hz FFT update,
+        // causing duplicate isolate/UI traffic and avoidable jank.
+        spectrumValid = false;
         return count;
     }
 
