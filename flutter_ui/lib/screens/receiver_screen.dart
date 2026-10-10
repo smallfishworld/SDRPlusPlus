@@ -4182,7 +4182,14 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       _mode = preset.mode;
       _bandwidthKhz = preset.bandwidthHz / 1000;
 
-      if (preset.mode == 'NFM') {
+      if (preset.mode == 'AM' && preset.category == 'Airband') {
+        // Airband is speech-first. Remove sub-300 Hz rumble while preserving
+        // the official AM AGC path and the full intelligibility band.
+        _highPassEnabled = true;
+        _noiseBlankerEnabled = false;
+        _fmIfNrEnabled = false;
+      }
+      else if (preset.mode == 'NFM') {
         _fmIfNrEnabled = true;
         _fmIfNrPreset = 1;
         _highPassEnabled = true;
