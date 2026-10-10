@@ -713,7 +713,9 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                         ),
                       ),
                       Positioned(
-                        left: (vfoX - 6).clamp(0.0, math.max(0.0, width - 12)),
+                        left: (vfoX - 6)
+                            .clamp(0.0, math.max(0.0, width - 12))
+                            .toDouble(),
                         top: 0,
                         child: const IgnorePointer(
                           child: Icon(
