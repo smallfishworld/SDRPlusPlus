@@ -1442,7 +1442,11 @@ uint32_t sdrpp_dsp_output_sample_rate(void) {
 }
 
 const char* sdrpp_dsp_backend_name(void) {
-    return "SDR++ official DSP core bridge v5 · CTCSS + FM IFNR + full radio controls";
+#ifdef SDRPP_MOBILE_REAL_DSP_LIBS
+    return "SDR++ official DSP core bridge v6 · real VOLK/FFTW · CTCSS + FM IFNR";
+#else
+    return "SDR++ official DSP core bridge v6 · scalar compatibility DSP";
+#endif
 }
 
 } // extern "C"
