@@ -234,7 +234,7 @@ jobs:
           test -n "$NDK"
 
           sudo apt-get update -qq
-          sudo apt-get install -y -qq patchelf
+          sudo apt-get install -y -qq patchelf python3-mako
 
           DEPS="$PWD/build/sdrpp-dsp-deps"
           PREFIX="$DEPS/install"
