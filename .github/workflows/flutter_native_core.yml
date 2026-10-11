@@ -1,0 +1,24 @@
+name: Flutter Native SDR++ Core
+
+# Register the manually dispatched Android release workflow on the default branch.
+# Choose the flutter-native-core branch in the Run workflow branch selector.
+# That branch contains the full native-test, Android-build, and release jobs.
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'Publish verified SDR++ Receiver Android v0.7.2'
+        type: boolean
+        required: true
+        default: true
+
+jobs:
+  select_flutter_native_core:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the Android development branch
+        shell: bash
+        run: |
+          echo "Select branch flutter-native-core from the Run workflow dropdown."
+          echo "The full CI and publishing jobs live on that branch."
+          exit 1
