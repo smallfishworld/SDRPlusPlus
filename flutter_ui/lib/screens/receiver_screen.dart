@@ -4106,8 +4106,10 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
     switch (_spectrumDragTarget) {
       case SpectrumDragTarget.vfo:
         _handleVfoAtX(details.localPosition.dx, width);
+        break;
       case SpectrumDragTarget.pan:
         _handleSpectrumPan(details.primaryDelta ?? details.delta.dx, width);
+        break;
       case null:
         break;
     }
