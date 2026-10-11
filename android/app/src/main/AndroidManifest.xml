@@ -3,7 +3,7 @@
     package="org.sdrpp.sdrpp">
 
     <application
-        android:label="SDR++"
+        android:label="SDR++ Mobile"
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:hasCode="true">

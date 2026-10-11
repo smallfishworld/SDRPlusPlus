@@ -1,0 +1,42 @@
+name: Build Android Mobile APK
+
+on:
+  push:
+    branches:
+      - android-mobile-ui
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch Android SDR build kit
+        working-directory: ${{ runner.workspace }}
+        run: git clone --depth 1 https://github.com/AlexandreRouma/android-sdr-kit
+
+      - name: Build Android SDR container
+        working-directory: ${{ runner.workspace }}/android-sdr-kit
+        run: docker build --progress=plain -t android-sdr-kit .
+
+      - name: Build SDR++ Mobile APK
+        run: >
+          docker run --name build
+          -v ${{ github.workspace }}:/root/SDRPlusPlus
+          android-sdr-kit
+          /bin/bash -l -c "cd /root/SDRPlusPlus/android && gradle --info assembleDebug"
+
+      - name: Recover APK
+        working-directory: ${{ runner.workspace }}
+        run: |
+          docker cp build:/root/SDRPlusPlus/android/app/build/outputs/apk/debug/app-debug.apk ./
+          mv app-debug.apk sdrpp-mobile.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdrpp-mobile-android
+          path: ${{ runner.workspace }}/sdrpp-mobile.apk
