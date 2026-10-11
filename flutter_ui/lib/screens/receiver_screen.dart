@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../models/sdr_module_catalog.dart';
+import '../models/spectrum_drag_target.dart';
 import '../services/android_usb_service.dart';
 import '../services/audio_output.dart';
 import '../services/pcm_recorder.dart';
@@ -88,6 +89,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
   int? _panPreviewCenterFrequencyHz;
   int _panStartCenterFrequencyHz = 127250000;
   double _panDragTotalPx = 0;
+  SpectrumDragTarget? _spectrumDragTarget;
   int _sampleRateHz = 2400000;
   String _mode = 'AM';
   double _bandwidthKhz = 10;
@@ -665,14 +667,16 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                     details.localPosition.dx,
                     width,
                   ),
-                  onHorizontalDragStart: (details) => _handleVfoAtX(
+                  onHorizontalDragStart: (details) => _beginSpectrumDrag(
                     details.localPosition.dx,
                     width,
+                    vfoX,
+                    passbandWidth,
                   ),
-                  onHorizontalDragUpdate: (details) => _handleVfoAtX(
-                    details.localPosition.dx,
-                    width,
-                  ),
+                  onHorizontalDragUpdate: (details) =>
+                      _updateSpectrumDrag(details, width),
+                  onHorizontalDragEnd: (_) => _finishSpectrumDrag(),
+                  onHorizontalDragCancel: _cancelSpectrumDrag,
                   onDoubleTap: _showFrequencyPad,
                   child: Stack(
                     children: <Widget>[
@@ -760,7 +764,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
                         left: 12,
                         bottom: 10,
                         child: _tinyBadge(
-                          'Drag red VFO · step ${_formatStep(_tuningStepHz)}',
+                          'Red VFO: tune · Elsewhere: pan',
                         ),
                       ),
                     ],
@@ -769,10 +773,7 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
               ),
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onHorizontalDragStart: (_) {
-                  _panStartCenterFrequencyHz = _centerFrequencyHz;
-                  _panDragTotalPx = 0;
-                },
+                onHorizontalDragStart: (_) => _beginSpectrumPan(),
                 onHorizontalDragUpdate: (details) {
                   _handleSpectrumPan(
                     details.primaryDelta ?? 0,
@@ -4077,6 +4078,53 @@ class _ReceiverScreenState extends State<ReceiverScreen> {
       await _audio.start();
       _audio.setVolume(_volume);
     });
+  }
+
+  void _beginSpectrumPan() {
+    _panStartCenterFrequencyHz = _centerFrequencyHz;
+    _panDragTotalPx = 0;
+  }
+
+  void _beginSpectrumDrag(
+    double x,
+    double width,
+    double vfoX,
+    double passbandWidth,
+  ) {
+    _spectrumDragTarget = classifySpectrumDrag(
+      touchX: x,
+      vfoX: vfoX,
+      passbandWidth: passbandWidth,
+      viewWidth: width,
+    );
+    if (_spectrumDragTarget == SpectrumDragTarget.pan) {
+      _beginSpectrumPan();
+    }
+  }
+
+  void _updateSpectrumDrag(DragUpdateDetails details, double width) {
+    switch (_spectrumDragTarget) {
+      case SpectrumDragTarget.vfo:
+        _handleVfoAtX(details.localPosition.dx, width);
+      case SpectrumDragTarget.pan:
+        _handleSpectrumPan(details.primaryDelta ?? details.delta.dx, width);
+      case null:
+        break;
+    }
+  }
+
+  void _finishSpectrumDrag() {
+    if (_spectrumDragTarget == SpectrumDragTarget.pan) {
+      _commitSpectrumPan();
+    }
+    _spectrumDragTarget = null;
+  }
+
+  void _cancelSpectrumDrag() {
+    if (_spectrumDragTarget == SpectrumDragTarget.pan) {
+      _cancelSpectrumPan();
+    }
+    _spectrumDragTarget = null;
   }
 
   void _handleVfoAtX(double x, double width) {
