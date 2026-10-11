@@ -299,6 +299,9 @@ jobs:
       - name: Analyze Flutter app
         run: flutter analyze lib
 
+      - name: Test spectrum drag interactions
+        run: flutter test test/spectrum_drag_target_test.dart
+
       - name: Build Android APK
         run: flutter build apk --release --target-platform android-arm64
 
