@@ -262,8 +262,12 @@ jobs:
           # upstream SDR++ Android runtime contract and keep NEEDED names stable.
           patchelf --set-soname libvolk.so "$VOLK_REAL"
           patchelf --set-soname libfftw3f.so "$FFTW_REAL"
-          cp "$VOLK_REAL" "$PREFIX/lib/libvolk.so"
-          cp "$FFTW_REAL" "$PREFIX/lib/libfftw3f.so"
+          if [ ! "$VOLK_REAL" -ef "$PREFIX/lib/libvolk.so" ]; then
+            cp "$VOLK_REAL" "$PREFIX/lib/libvolk.so"
+          fi
+          if [ ! "$FFTW_REAL" -ef "$PREFIX/lib/libfftw3f.so" ]; then
+            cp "$FFTW_REAL" "$PREFIX/lib/libfftw3f.so"
+          fi
 
           file "$PREFIX/lib/libvolk.so" "$PREFIX/lib/libfftw3f.so"
 
