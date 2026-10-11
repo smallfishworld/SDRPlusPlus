@@ -242,7 +242,7 @@ jobs:
           mkdir -p "$DEPS"
           cd "$DEPS"
 
-          git clone --depth 1 --branch v3.1.2             https://github.com/gnuradio/volk.git volk
+          git clone --depth 1 --recurse-submodules --shallow-submodules --branch v3.1.2             https://github.com/gnuradio/volk.git volk
           cmake             -S volk             -B volk-build             -G Ninja             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake"             -DANDROID_ABI=arm64-v8a             -DANDROID_PLATFORM=android-24             -DCMAKE_BUILD_TYPE=Release             -DCMAKE_INSTALL_PREFIX="$PREFIX"             -DENABLE_TESTING=OFF
           cmake --build volk-build --parallel 2
           cmake --install volk-build
