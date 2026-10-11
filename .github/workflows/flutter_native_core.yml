@@ -300,3 +300,54 @@ jobs:
         with:
           name: SDRPP-Receiver-Android
           path: flutter_ui/build/app/outputs/flutter-apk/SDRPP-Receiver-v0.7.2-native.apk
+
+
+  publish_android_release:
+    name: Publish Android v0.7.2 Release
+    needs: [native-host, android]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/flutter-native-core' && contains(github.event.head_commit.message, '[release:android-v0.7.2]') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified Android APK
+        uses: actions/download-artifact@v4
+        with:
+          name: SDRPP-Receiver-Android
+          path: dist
+
+      - name: Verify APK and prepare release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/SDRPP-Receiver-v0.7.2-native.apk
+          sha256sum dist/SDRPP-Receiver-v0.7.2-native.apk | tee dist/SHA256SUMS.txt
+          cat > dist/release-notes.md <<'EOF'
+          SDR++ Receiver v0.7.2 — Android ARM64.
+
+          Highlights:
+          - Improved live VFO/spectrum tuning with smoother retunes.
+          - Audio and airband reception improvements.
+          - Native SDR++ DSP bridge with RTL-SDR and SoapySDR integration.
+
+          This APK is built by GitHub Actions from flutter-native-core after native smoke tests, Flutter analysis, and Android build complete successfully.
+
+          Note: Hardware compatibility varies by device and attached SDR; validate reception on actual hardware.
+          EOF
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=v0.7.2-android
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/SDRPP-Receiver-v0.7.2-native.apk dist/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" dist/SDRPP-Receiver-v0.7.2-native.apk dist/SHA256SUMS.txt \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "SDR++ Receiver v0.7.2 (Android)" \
+              --notes-file dist/release-notes.md
+          fi
